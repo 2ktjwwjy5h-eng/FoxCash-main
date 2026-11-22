@@ -26,7 +26,7 @@ jobs:
       # (a API da NVD é rate-limited; o OWASP persiste a base localmente). O
       # cache preserva entre runs e acelera o check de minutos para segundos.
       - name: Cache da base NVD (dependency-check-data)
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.m2/repository/org/owasp/dependency-check-data
           key: nvd-data-${{ runner.os }}-${{ hashFiles('pom.xml') }}
