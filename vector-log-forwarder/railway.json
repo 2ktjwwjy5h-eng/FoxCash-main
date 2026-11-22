@@ -1,0 +1,12 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE"
+  },
+  "deploy": {
+    "numReplicas": 1,
+    "startCommand": "sh -c 'sed -i \"s|__AXIOM_API_TOKEN__|$AXIOM_API_TOKEN|\" /etc/vector/vector.toml && exec vector --config /etc/vector/vector.toml'",
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10
+  }
+}

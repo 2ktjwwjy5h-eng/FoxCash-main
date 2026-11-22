@@ -1,0 +1,58 @@
+# Perfil de DESENVOLVIMENTO LOCAL (homologação 2026-08-05).
+#
+# Reúne TODOS os defaults fake que antes viviam no application.yml — o perfil
+# base agora é SEGURO-POR-DEFAULT (fail-fast sem segredos; assinatura de webhook
+# obrigatória; token de reset não exposto; sem seed de master com senha
+# conhecida). Para rodar localmente:
+#
+#   SPRING_PROFILES_ACTIVE=dev mvn spring-boot:run
+#
+# Estes valores são apenas para desenvolvimento (localhost). Produção usa
+# application-prod.yml (env vars obrigatórias, HTTPS, assinatura de webhook
+# sempre ligada, token de reset nunca exposto).
+foxcash:
+  crypto:
+    # Chave AES-256 de desenvolvimento (nunca usar em produção).
+    secret: ${FOXCASH_CRYPTO_SECRET:dev-only-secret-change-me-32bytes}
+  security:
+    # Chave admin fake de dev (nunca usar em produção).
+    admin-api-key: ${FOXCASH_ADMIN_API_KEY:dev-only-admin-api-key}
+  master:
+    # Seed do primeiro master (admin) com senha fake — só em dev (localhost).
+    seed-username: ${FOXCASH_MASTER_SEED_USERNAME:master}
+    seed-password: ${FOXCASH_MASTER_SEED_PASSWORD:dev-only-master-seed-password}
+  auth:
+    # Dev: devolve o token de recuperação de senha na resposta do forgot-password
+    # (testável sem infra de e-mail). Em produção é sempre false.
+    expose-reset-token: true
+  psp:
+    # Dev: assinatura de webhook desligada (o E2E não assina os webhooks).
+    webhook:
+      secret: ${FOXCASH_PSP_WEBHOOK_SECRET:dev-only-psp-webhook-secret}
+      verify-signature: false
+    payout-webhook:
+      secret: ${FOXCASH_PSP_PAYOUT_WEBHOOK_SECRET:dev-only-psp-payout-webhook-secret}
+      verify-signature: false
+    sweep:
+      # Spec 92 (T4.2): cron CURTO (a cada 30s) no perfil dev — o cenário E2E
+      # do sweep aguarda o job com polling tolerante a timing. O kill-switch
+      # continua default OFF (enabled=false): o bean do scheduler só existe
+      # quando FOXCASH_PSP_SWEEP_ENABLED=true (E2E liga junto com o mock-balance
+      # alto e a destination-key). Em produção vale o default (06:00 UTC).
+      cron: ${FOXCASH_PSP_SWEEP_CRON:*/30 * * * * *}
+  notification:
+    # SSRF: continua bloqueado por default em dev; o E2E (cenário 15) liga via
+    # FOXCASH_NOTIFICATION_ALLOW_LOOPBACK=true (receptor local).
+    allow-loopback: ${FOXCASH_NOTIFICATION_ALLOW_LOOPBACK:false}
+    # Spec 45: em dev o token de reset é entregue via LOG (o adapter log é
+    # proibido em prod — fail-fast no NotificationProperties). O token continua
+    # exposto na resposta via expose-reset-token=true.
+    reset-token:
+      deliverer: ${FOXCASH_RESET_TOKEN_DELIVERER:log}
+      base-url: ${FOXCASH_PORTAL_BASE_URL:http://localhost:5173}
+  auto-withdraw:
+    # Spec 70 (D10.1): cron CURTO (a cada 30s) no perfil dev — o cenário E2E de
+    # auto-saque aguarda o job com polling tolerante a timing. Só cria saques
+    # para configs ATIVAS; os demais cenários não habilitam, então não há
+    # interferência. Em produção o default do application.yml (5 min) vale.
+    cron: ${FOXCASH_AUTO_WITHDRAW_CRON:*/30 * * * * *}

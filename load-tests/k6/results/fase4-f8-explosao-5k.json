@@ -1,0 +1,22 @@
+{
+  "fase": "62 F8 — explosão estágio 1: 5k vendas/s (rate limit ATIVO)",
+  "data": "2026-08-09 ~22:29 UTC (deploy loadgen f022eff9, rede privada)",
+  "configuracao": {
+    "alvo": "5.000 vendas/s (3 réplicas × STAGE=1667)",
+    "rate_limit_app": "ATIVO — autenticado=120/min, transacional=300/min, webhook=120/min (anônimo elevado 10M só para o setup do pool)",
+    "webhook": "PAID assinado (HMAC-SHA256)",
+    "duracao": "30s"
+  },
+  "resultado": {
+    "iterations": 49898,
+    "dropped": 113,
+    "sale_ok_rate": "0.24% (quase tudo 429 — backpressure esperado)",
+    "sale_5xx_rate": "0.00% — CRITÉRIO DE QUEBRA BONITA OK",
+    "charge_429_rate": "~100% (rate limit transacional cortando a chegada)",
+    "http_req_failed_rate": "90.4% (todos 429 — 4xx, não 5xx)",
+    "charge_duration_p95_ms": 105.6,
+    "webhook_duration_p95_ms": 159.4
+  },
+  "conclusao": "Quebra bonita confirmada no estágio 1: sob chegada de 5k/s, o app degrada via 429/backpressure (rate limit Specs 58/59) com ZERO 5xx, 0 duplicações e integridade intacta — o rate limit corta ANTES de saturar Postgres/pool/JVM. NOTA: o deploy ficou 'CRASHED' por bug do handleSummary do k6 (metric inexistente — corrigido no script) e por deploy automático concorrente disparado pela mudança de variáveis; o teste em si completou e as métricas são válidas.",
+  "gate_pos_carga": "dups=0, reconciliation_open=0, deadlocks=0, outbox 0 FAILED (verificado após o estágio)"
+}

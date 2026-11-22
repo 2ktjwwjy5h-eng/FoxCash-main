@@ -1,0 +1,25 @@
+# Perfil RAILWAY (decisão de infraestrutura 2026-08-05 — ADR-011).
+# Ativar SEMPRE junto do prod: SPRING_PROFILES_ACTIVE=prod,railway
+#
+# Topologia Railway: o TLS termina no EDGE (proxy do Railway) — o app fala
+# HTTP puro na porta injetada ($PORT) e o proxy encaminha com
+# X-Forwarded-Proto/X-Forwarded-For. Por isso:
+#   - server.port usa ${PORT} (Railway injeta; fallback 8080 p/ teste local);
+#   - server.ssl.enabled=false + campos nulos desligam o keystore do prod
+#     (no Spring Boot 3.x, `key-store: ""` AINDA conta como definido — o check
+#     é `!= null`; por isso usamos `enabled: false` + `~` (null));
+#   - server.forward-headers-strategy=framework — o require-https (prod)
+#     honra o X-Forwarded-Proto do edge e redireciona HTTP→HTTPS SEM loop.
+#   - FOXCASH_TRUST_PROXY=true deve ser setado no Railway (o edge SOBRESCREVE o
+#     X-Forwarded-For) para o rate limit ver o IP real do cliente.
+server:
+  port: ${PORT:8080}
+  forward-headers-strategy: framework
+  ssl:
+    enabled: false
+    key-store: ~
+    key-store-password: ~
+    key-store-type: ~
+    key-alias: ~
+  http2:
+    enabled: false

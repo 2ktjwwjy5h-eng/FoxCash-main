@@ -1,0 +1,204 @@
+{
+    "root_group": {
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {},
+        "checks": {
+                "webhook PAID 204": {
+                    "path": "::webhook PAID 204",
+                    "id": "3018557a5a8bc4ed3c715ab8ff261a54",
+                    "passes": 301,
+                    "fails": 0,
+                    "name": "webhook PAID 204"
+                }
+            },
+        "name": "",
+        "path": ""
+    },
+    "metrics": {
+        "sale_ok": {
+            "fails": 0,
+            "passes": 301,
+            "value": 1
+        },
+        "iteration_duration": {
+            "min": 426.2395,
+            "med": 693.4184,
+            "max": 827.1948,
+            "p(90)": 764.4114,
+            "p(95)": 780.6896,
+            "avg": 645.8882455149501
+        },
+        "http_req_duration{expected_response:true}": {
+            "max": 884.8985,
+            "p(90)": 287.63943,
+            "p(95)": 300.71507,
+            "avg": 250.24046617647062,
+            "min": 206.5642,
+            "med": 236.02859999999998
+        },
+        "vus": {
+            "min": 0,
+            "max": 45,
+            "value": 29
+        },
+        "http_reqs": {
+            "count": 612,
+            "rate": 57.726662348423055
+        },
+        "http_req_duration": {
+            "p(95)": 300.71507,
+            "avg": 250.24046617647062,
+            "min": 206.5642,
+            "med": 236.02859999999998,
+            "max": 884.8985,
+            "p(90)": 287.63943
+        },
+        "data_received": {
+            "count": 1105577,
+            "rate": 104283.12120781458
+        },
+        "http_req_failed": {
+            "passes": 0,
+            "fails": 612,
+            "thresholds": {
+                "rate<0.001": false
+            },
+            "value": 0
+        },
+        "iterations": {
+            "count": 301,
+            "rate": 28.39170811580938
+        },
+        "webhook_duration": {
+            "avg": 230.75276478405345,
+            "min": 206.5642,
+            "med": 231.1494,
+            "max": 537.2109,
+            "p(90)": 248.123,
+            "p(95)": 253.261
+        },
+        "http_req_waiting": {
+            "med": 236.02859999999998,
+            "max": 883.8981,
+            "p(90)": 287.58405999999997,
+            "p(95)": 300.71507,
+            "avg": 250.18841062091505,
+            "min": 206.5642
+        },
+        "http_req_receiving": {
+            "avg": 0.009191013071895423,
+            "min": 0,
+            "med": 0,
+            "max": 1.0049,
+            "p(90)": 0,
+            "p(95)": 0
+        },
+        "http_req_sending": {
+            "max": 1.5034,
+            "p(90)": 0,
+            "p(95)": 0.511605,
+            "avg": 0.04286454248366014,
+            "min": 0,
+            "med": 0
+        },
+        "data_sent": {
+            "count": 509339,
+            "rate": 48043.20338869845
+        },
+        "vus_max": {
+            "value": 200,
+            "min": 200,
+            "max": 200
+        },
+        "checks": {
+            "passes": 301,
+            "fails": 0,
+            "value": 1
+        },
+        "http_req_connecting": {
+            "med": 0,
+            "max": 119.5896,
+            "p(90)": 112.87159,
+            "p(95)": 113.664315,
+            "avg": 36.82460408496732,
+            "min": 0
+        },
+        "http_req_blocked": {
+            "avg": 75.72843529411762,
+            "min": 0,
+            "med": 0,
+            "max": 283.351,
+            "p(90)": 231.28227,
+            "p(95)": 232.22543000000002
+        },
+        "charge_duration": {
+            "p(90)": 299.7987,
+            "p(95)": 309.1218,
+            "avg": 262.05077906976754,
+            "min": 217.2758,
+            "med": 269.2525,
+            "max": 383.0761
+        },
+        "sale_5xx": {
+            "passes": 0,
+            "fails": 0,
+            "thresholds": {
+                "rate<0.0001": false
+            },
+            "value": 0
+        },
+        "http_req_tls_handshaking": {
+            "min": 0,
+            "med": 0,
+            "max": 141.1105,
+            "p(90)": 118.48064000000001,
+            "p(95)": 118.882435,
+            "avg": 38.858447875817
+        }
+    },
+    "setup_data": {
+        "keyBase": "cap-1786253910565",
+        "merchants": [
+            {
+                "merchantId": "982d33ef-2837-462a-85b3-8ac09a6ae71a",
+                "apiKey": "mch_edcfd22d0b712f4b108381dca03d433c"
+            },
+            {
+                "apiKey": "mch_db379b64cda14638ab9a5524204ea589",
+                "merchantId": "87435d1a-3acf-45b4-811a-f9c0e869f65f"
+            },
+            {
+                "apiKey": "mch_7b9bc9bc33fcf56b730450a6febe8005",
+                "merchantId": "b6fcd0ae-4760-4844-b35d-d80f4944a1c0"
+            },
+            {
+                "apiKey": "mch_ded7025b7e64e544fb1df6fb0769c19e",
+                "merchantId": "09e36903-9b92-42f6-905c-776225b18803"
+            },
+            {
+                "apiKey": "mch_784a88015d5fcaf2e60980450198e59b",
+                "merchantId": "b9592255-1c51-4bf6-9be0-eecfc84a6e09"
+            },
+            {
+                "apiKey": "mch_f3e44217452b669d8e55e6aab60a446c",
+                "merchantId": "3de9a63c-5154-41a9-a3ea-058ae09ee1fb"
+            },
+            {
+                "apiKey": "mch_22de790c461152dc6091404543f077e8",
+                "merchantId": "03340f3b-134e-4736-90ad-819b8ea8d1aa"
+            },
+            {
+                "apiKey": "mch_11dc4796d9e2877a7b7c0b79371808a8",
+                "merchantId": "8824164a-6d7f-409d-84b1-b0dd2a5ea451"
+            },
+            {
+                "apiKey": "mch_af880774dc1e67571028486055e7875b",
+                "merchantId": "42ac4077-89f3-41b4-bcbc-3c3872ec334a"
+            },
+            {
+                "apiKey": "mch_d1eee575e44932c112c5fa9cac408e0a",
+                "merchantId": "6986814a-ae09-4be1-a488-ab8da0a859d6"
+            }
+        ]
+    }
+}

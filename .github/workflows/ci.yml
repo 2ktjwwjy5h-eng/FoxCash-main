@@ -1,0 +1,448 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Build + testes unitários
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: mvn verify (compila + testes unitários — grupo context excluído)
+        run: mvn -B verify
+
+      # Spec 68 (F4): o smoke de contexto (@SpringBootTest + Postgres) fica
+      # FORA do verify default (surefire excludedGroups=context); roda aqui com
+      # Postgres (mesmo setup do job e2e) via o profile context-tests.
+      - name: Instala PostgreSQL nativo no runner (testes de contexto — Spec 68)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql postgresql-client
+          sudo service postgresql start
+          sudo -u postgres psql -c "CREATE USER nyxcash WITH PASSWORD 'nyxcash';"
+          sudo -u postgres psql -c "CREATE DATABASE nyxcash OWNER nyxcash;"
+
+      - name: Testes de contexto (Spec 68) — smoke @SpringBootTest com Postgres
+        env:
+          DB_URL: jdbc:postgresql://localhost:5432/nyxcash
+          DB_USERNAME: nyxcash
+          DB_PASSWORD: nyxcash
+          SPRING_PROFILES_ACTIVE: dev
+          FOXCASH_ADMIN_API_KEY: dev-only-admin-api-key
+        run: mvn -B test -Pcontext-tests
+
+  docs:
+    name: Docs consistency (Spec 138 — roadmap/frontmatter/código)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Spec 138 (C5): a documentação é verificada MECANICAMENTE — falha o build
+      # se: (A) status da tabela do roadmap ≠ frontmatter da spec; (B) spec
+      # `verified` com código no src/; (C) requirements.md de spec
+      # implemented/audited referenciando classe inexistente. Exceções apenas
+      # via allowlist documentada (scripts/check-docs-consistency.allowlist).
+      - name: check-docs-consistency.sh (Spec 138)
+        run: bash scripts/check-docs-consistency.sh
+
+  integration:
+    name: "Testes de integração (Spec 137 — Testcontainers: Postgres + Redis reais)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # Camada de integração real (@SpringBootTest + Testcontainers): o runner do
+      # GitHub Actions TEM Docker — a base sobe Postgres 18 + Redis reais em
+      # containers (fluxos críticos: cobrança/idempotência/webhook/ledger, auth +
+      # RBAC, HMAC do webhook, rate limit com Redis, fail-open do Redis). Sem
+      # Docker a base cai para o Postgres nativo e os testes de Redis pulam
+      # (assumption) — padrão da Spec 68.
+      - name: Testes de integração (Spec 137) — @SpringBootTest + Testcontainers
+        env:
+          SPRING_PROFILES_ACTIVE: dev
+          FOXCASH_ADMIN_API_KEY: dev-only-admin-api-key
+        run: mvn -B test -Pintegration-tests
+
+  e2e:
+    name: E2E Playwright (PostgreSQL nativo — sem Docker)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Instala PostgreSQL nativo no runner
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql postgresql-client
+          sudo service postgresql start
+          sudo -u postgres psql -c "CREATE USER nyxcash WITH PASSWORD 'nyxcash';"
+          sudo -u postgres psql -c "CREATE DATABASE nyxcash OWNER nyxcash;"
+
+      - name: Sobe a aplicação (profile dev + PG do runner)
+        env:
+          DB_URL: jdbc:postgresql://localhost:5432/nyxcash
+          DB_USERNAME: nyxcash
+          DB_PASSWORD: nyxcash
+          # Perfil dev (homologação 2026-08-05): o application.yml base agora é
+          # seguro-por-default (fail-fast sem segredos; assinatura de webhook
+          # obrigatória; token de reset não exposto). O E2E exige o perfil dev.
+          SPRING_PROFILES_ACTIVE: dev
+          # Chave admin de dev (default do application-dev.yml) — o health check
+          # usa /api/v1/admin/** que exige ROLE_ADMIN desde a Spec 12 (antes o
+          # curl sem header recebia 401 e o job falhava com "app nao subiu").
+          FOXCASH_ADMIN_API_KEY: dev-only-admin-api-key
+          # O cenario 15 (Spec 35) entrega webhooks para um receptor local
+          # (127.0.0.1) — opt-in explicito para o SSRF block (auditoria 2026-08-05).
+          FOXCASH_NOTIFICATION_ALLOW_LOOPBACK: 'true'
+          # Spec 46: o job e2e roda o spec browser do portal (portal-ui.spec.js)
+          # — a SPA precisa ser servida pelo Spring Boot (fallback /index.html +
+          # CSP da SPA + rotas públicas) com a app em dev.
+          FOXCASH_PORTAL_SERVE_FRONTEND: 'true'
+          # Spec 71 (T6.4): o job e2e também roda o spec browser do Master
+          # Console (master-console-ui.spec.js) — a SPA do console precisa ser
+          # servida pelo Spring Boot (fallback /console/index.html + rotas
+          # públicas /console/**, build em static/console).
+          FOXCASH_CONSOLE_SERVE_FRONTEND: 'true'
+          # Rate limit (20 req/min/IP no login) desligado: a suíte de CONTRATOS
+          # (auth 24 + journey + security + portal + bots + outbox) faz MUITO mais
+          # de 20 logins/min e esbarra no 429 do login — flakiness documentada e
+          # pré-existente (Spec 64; mesma env do job `load` e dos runs locais
+          # documentados: "com rate limit ativo a suíte local rápida esbarra no
+          # 429 do login"). O 429 NUNCA é exigido pela suíte (só tolerado em 2
+          # testes de brute-force/lockout que esperam 401/400). O rate limit tem
+          # cobertura própria (unitários Spec 43 + smoke ao vivo Spec 66). O
+          # lockout POR CONTA (max-login-attempts=5 → 401) continua ativo e é o
+          # alvo dos testes de brute-force.
+          FOXCASH_SECURITY_RATE_LIMIT_ENABLED: 'false'
+          # Spec 74 (T5.3): o E2E de registro de bots roda contra um mock HTTP
+          # do Telegram (bots-registro.spec.js inicia o servidor em 9001) — a
+          # app precisa apontar a Bot API para o mock (getMe/setWebhook).
+          FOXCASH_TELEGRAM_API_BASE_URL: 'http://localhost:9001'
+          # Spec 80 (T2.3): o E2E do editor de broadcast sobe o MESMO mock (9001)
+          # e faz upload de mídia (POST /portal/broadcasts/media → sendPhoto no
+          # canal CDN → file_id). O canal CDN precisa estar configurado na app
+          # (default vazio em dev/test — o upload exige o canal).
+          FOXCASH_BOTS_TELEGRAM_CDN_CHANNEL_ID: '-1001234567890'
+          # Spec 78 (T2.1): o E2E do wizard do Discord roda contra um mock HTTP
+          # da API v10 (bots-creator-discord.spec.js inicia o servidor em 9002)
+          # — a app precisa apontar a base URL para o mock (getMe/PATCH /users/
+          # @me/PUT commands dos endpoints validate/setup do wizard).
+          FOXCASH_DISCORD_API_BASE_URL: 'http://localhost:9002'
+          # Specs 81/82 (T4.3/T3.3): o E2E de tracking sobe mocks HTTP dos 4
+          # provedores (tracking.spec.js inicia os servidores em 9003-9006) — a
+          # app precisa apontar as base URLs para os mocks (dispatch do funil →
+          # CAPI/TikTok/UTMify/Otimizey + POST /sync). A base do TikTok já inclui
+          # o path /open_api/v1.3 (o client adiciona /pixel/track/).
+          FOXCASH_TRACKING_CAPI_BASE_URL: 'http://localhost:9003'
+          FOXCASH_TRACKING_TIKTOK_BASE_URL: 'http://localhost:9004/open_api/v1.3'
+          FOXCASH_TRACKING_UTMIFY_BASE_URL: 'http://localhost:9005'
+          FOXCASH_TRACKING_OTIMIZEY_BASE_URL: 'http://localhost:9006'
+          # Spec 91: o E2E de fallback de adquirente (psp-fallback.spec.js) exige
+          # o roteamento LIGADO (FOXCASH_PSP_ROUTING_ENABLED=true) — sem as envs
+          # abaixo o PixProviderRouter usa adapter único (mock) e o cenário de
+          # fallback falha com 502 (mock A em FAILURE sem rota para o suitpay).
+          # O teste DOCUMENTA as envs no cabeçalho mas não tem skip — o job e2e
+          # é o único que as injeta (bug do CI corrigido 2026-08-17).
+          FOXCASH_PSP_ROUTING_ENABLED: 'true'
+          FOXCASH_PSP_ROUTING_PROVIDERS: 'mock,suitpay'
+          FOXCASH_PSP_ROUTING_POLICY_DEFAULT_PROVIDERS: 'mock,suitpay'
+          FOXCASH_PSP_ROUTING_POLICY_HIGH_RISK_PROVIDERS: 'suitpay'
+          FOXCASH_PSP_ROUTING_POLICY_HIGH_RISK_SCORE_MIN: '60'
+        run: |
+          mvn -B spring-boot:run > /tmp/foxcash-boot.log 2>&1 &
+          for i in $(seq 1 60); do
+            # Liveness público do actuator (observabilidade 2026-08-07).
+            curl -sf http://localhost:8080/actuator/health > /dev/null 2>&1 && { echo "app pronta"; break; }
+            sleep 2
+          done
+          curl -sf http://localhost:8080/actuator/health > /dev/null 2>&1 || { echo "app nao subiu"; cat /tmp/foxcash-boot.log; exit 1; }
+
+      # npm test = playwright test com testDir ./tests → roda todas as suítes
+      # (auth, merchant-journey, security, portal-ui browser). Nenhum filtro
+      # por arquivo — spec novo em tests/ entra no CI automaticamente.
+      - name: E2E Playwright (auth + journey + segurança + portal UI browser)
+        working-directory: e2e-tests
+        env:
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          DB_USERNAME: nyxcash
+          DB_PASSWORD: nyxcash
+          DB_NAME: nyxcash
+          # MESMA env do passo "Sobe a aplicação": o teste 9 do master-config
+          # (rate limit por lojista) tem test.skip quando
+          # FOXCASH_SECURITY_RATE_LIMIT_ENABLED=false (o job e2e desliga o rate
+          # limit global — sem o filtro não há 429). O skip lê a env NO
+          # PROCESSO do Playwright, não no da app — sem propagar aqui o teste
+          # rodava contra app sem rate limit e falhava com 201 (esperava 429).
+          # Bug do CI corrigido 2026-08-17.
+          FOXCASH_SECURITY_RATE_LIMIT_ENABLED: 'false'
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm test
+
+  flyway:
+    name: Flyway — integridade das migrations (checksum + pendentes)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Instala PostgreSQL nativo no runner
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql postgresql-client
+          sudo service postgresql start
+          sudo -u postgres psql -c "CREATE USER nyxcash WITH PASSWORD 'nyxcash';"
+          sudo -u postgres psql -c "CREATE DATABASE nyxcash OWNER nyxcash;"
+
+      # 1) Aplica todas as migrations no banco VAZIO (recém-criado): cria a
+      #    flyway_schema_history e valida os checksums. `mvn flyway:validate`
+      #    sozinho NÃO cria o histórico — o passo 2 (classpath == banco)
+      #    quebraria com "relation does not exist" (bug do CI 2026-08-07).
+      - name: flyway:migrate — aplica V1..Vn no banco vazio
+        env:
+          DB_URL: jdbc:postgresql://localhost:5432/nyxcash
+          DB_USERNAME: nyxcash
+          DB_PASSWORD: nyxcash
+        run: |
+          mvn -B flyway:migrate \
+            -Dflyway.url="$DB_URL" \
+            -Dflyway.user="$DB_USERNAME" \
+            -Dflyway.password="$DB_PASSWORD"
+
+      # 2) Pendentes: o banco (recém-migrado) deve ter TODAS as migrations do
+      #    classpath aplicadas — a comparação abaixo detecta arquivo novo no
+      #    classpath ainda não aplicado (renumeração/adição pós-fato).
+      #
+      #    ESCOPO: banco EFÊMERO criado neste job. NÃO usar esta regra em banco
+      #    persistente (produção/staging): lá é ESPERADO classpath > banco quando
+      #    uma migration nova (V43) entra antes do deploy (banco ainda na V42) —
+      #    a divergência é o estado normal pré-migração, não um erro. Em produção
+      #    o "sem pendentes" é garantido pelo próprio boot (Flyway aplica o que
+      #    falta) + Hibernate validate.
+      - name: Nenhuma migration pendente (classpath == banco, EFÊMERO)
+        run: |
+          # Versões no classpath (ordem numérica)
+          classpath_versions=$(ls src/main/resources/db/migration/V*.sql \
+            | sed -E 's|.*/V([0-9]+)__.*|\1|' | sort -n | tr '\n' ' ' | xargs)
+          # Versões aplicadas no banco (flyway_schema_history)
+          db_versions=$(PGPASSWORD=nyxcash psql -h localhost -U nyxcash -d nyxcash -tAc \
+            "SELECT version FROM flyway_schema_history ORDER BY installed_rank" \
+            | tr -d '\r' | tr '\n' ' ' | xargs)
+          echo "Classpath: $classpath_versions"
+          echo "Banco:     $db_versions"
+          if [ "$classpath_versions" != "$db_versions" ]; then
+            echo "Migrations pendentes ou divergência classpath/banco detectada."
+            echo "Classpath: $classpath_versions"
+            echo "Banco:     $db_versions"
+            exit 1
+          fi
+          echo "OK: todas as migrations aplicadas, nenhuma pendente."
+
+  flyway-coldstart:
+    name: Flyway — banco vazio → migrate → boot + Hibernate validate + smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Instala PostgreSQL nativo no runner (banco VAZIO)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql postgresql-client
+          sudo service postgresql start
+          sudo -u postgres psql -c "CREATE USER nyxcash WITH PASSWORD 'nyxcash';"
+          sudo -u postgres psql -c "CREATE DATABASE nyxcash OWNER nyxcash;"
+
+      # Cold-start: o banco é criado do zero e a aplicação faz o migrate completo
+      # (V1..V42) no boot. Detecta migrations que dependem ACIDENTALMENTE de
+      # estado pré-existente do banco (dados/colunas de uma migration anterior
+      # não recriados por uma nova). Hibernate ddl-auto=validate roda no boot:
+      # falha se o schema migrado não bater com as entities.
+      - name: Boot com banco vazio (migrate V1..V42 + Hibernate validate)
+        env:
+          DB_URL: jdbc:postgresql://localhost:5432/nyxcash
+          DB_USERNAME: nyxcash
+          DB_PASSWORD: nyxcash
+          SPRING_PROFILES_ACTIVE: dev
+          FOXCASH_ADMIN_API_KEY: dev-only-admin-api-key
+        run: |
+          mvn -B spring-boot:run > /tmp/coldstart-boot.log 2>&1 &
+          for i in $(seq 1 60); do
+            grep -q "Started FoxCashApplication" /tmp/coldstart-boot.log && { echo "boot ok"; break; }
+            grep -q "APPLICATION FAILED TO START\|BUILD FAILURE" /tmp/coldstart-boot.log && { echo "boot FALHOU"; cat /tmp/coldstart-boot.log; exit 1; }
+            sleep 2
+          done
+          grep -q "Started FoxCashApplication" /tmp/coldstart-boot.log || { echo "app nao subiu em 120s"; cat /tmp/coldstart-boot.log; exit 1; }
+          grep -E "Successfully applied|No migration necessary|Schema .* is up to date" /tmp/coldstart-boot.log || { echo "migrate nao executou"; cat /tmp/coldstart-boot.log; exit 1; }
+
+      # Smoke: uma requisição real passa pela stack (security + DB + service).
+      - name: Smoke test (GET /api/v1/admin/merchants)
+        env:
+          FOXCASH_ADMIN_API_KEY: dev-only-admin-api-key
+        run: |
+          curl -sf -H "X-Api-Key: ${FOXCASH_ADMIN_API_KEY}" http://localhost:8080/api/v1/admin/merchants > /dev/null || { echo "smoke falhou"; exit 1; }
+          echo "Smoke OK: banco vazio → migrate → boot → request real funcionou."
+
+  flyway-upgrade:
+    name: Flyway — upgrade incremental (V41 → V42) + boot + smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Instala PostgreSQL nativo no runner
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql postgresql-client
+          sudo service postgresql start
+          sudo -u postgres psql -c "CREATE USER nyxcash WITH PASSWORD 'nyxcash';"
+          sudo -u postgres psql -c "CREATE DATABASE nyxcash OWNER nyxcash;"
+
+      # Upgrade test: aplica APENAS até a V41 (simula o banco de produção no
+      # estado anterior ao deploy), depois o boot aplica SÓ a V42 pendente —
+      # exatamente o cenário de produção durante uma atualização. A V41 é a
+      # penúltima migration do classpath (V42 é a última); quando houver V43+,
+      # este job pega automaticamente "última - 1" como target.
+      - name: Prepara banco na V41 (migrate com target)
+        env:
+          DB_URL: jdbc:postgresql://localhost:5432/nyxcash
+          DB_USERNAME: nyxcash
+          DB_PASSWORD: nyxcash
+        run: |
+          # Aplica V1..V41 (target = penúltima migration do classpath)
+          target=$(ls src/main/resources/db/migration/V*.sql \
+            | sed -E 's|.*/V([0-9]+)__.*|\1|' | sort -n | tail -2 | head -1)
+          echo "Aplicando até a V${target} (simula banco pré-upgrade)"
+          mvn -B flyway:migrate \
+            -Dflyway.url="$DB_URL" -Dflyway.user="$DB_USERNAME" \
+            -Dflyway.password="$DB_PASSWORD" -Dflyway.target="$target"
+          applied=$(PGPASSWORD=nyxcash psql -h localhost -U nyxcash -d nyxcash -tAc \
+            "SELECT count(*) FROM flyway_schema_history WHERE success = true")
+          echo "Migrations aplicadas até aqui: $applied"
+
+      - name: Boot aplica a última migration (V42) + Hibernate validate + smoke
+        env:
+          DB_URL: jdbc:postgresql://localhost:5432/nyxcash
+          DB_USERNAME: nyxcash
+          DB_PASSWORD: nyxcash
+          SPRING_PROFILES_ACTIVE: dev
+          FOXCASH_ADMIN_API_KEY: dev-only-admin-api-key
+        run: |
+          mvn -B spring-boot:run > /tmp/upgrade-boot.log 2>&1 &
+          for i in $(seq 1 60); do
+            grep -q "Started FoxCashApplication" /tmp/upgrade-boot.log && { echo "boot ok"; break; }
+            grep -q "APPLICATION FAILED TO START\|BUILD FAILURE" /tmp/upgrade-boot.log && { echo "boot FALHOU"; cat /tmp/upgrade-boot.log; exit 1; }
+            sleep 2
+          done
+          grep -q "Started FoxCashApplication" /tmp/upgrade-boot.log || { echo "app nao subiu em 120s"; cat /tmp/upgrade-boot.log; exit 1; }
+          grep -E "Successfully applied|No migration necessary|Schema .* is up to date" /tmp/upgrade-boot.log || { echo "migrate nao executou"; cat /tmp/upgrade-boot.log; exit 1; }
+          # Confirma que a última migration (V42) foi aplicada pelo upgrade
+          last=$(ls src/main/resources/db/migration/V*.sql \
+            | sed -E 's|.*/V([0-9]+)__.*|\1|' | sort -n | tail -1)
+          applied_now=$(PGPASSWORD=nyxcash psql -h localhost -U nyxcash -d nyxcash -tAc \
+            "SELECT count(*) FROM flyway_schema_history WHERE success = true")
+          echo "Migrations aplicadas após upgrade: $applied_now (esperado inclui V${last})"
+          curl -sf -H "X-Api-Key: ${FOXCASH_ADMIN_API_KEY}" http://localhost:8080/api/v1/admin/merchants > /dev/null || { echo "smoke falhou"; exit 1; }
+          echo "Upgrade OK: V41 → boot aplica V42 → Hibernate validate → smoke real."
+
+  load:
+    name: Carga + concorrência (k6)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Instala PostgreSQL nativo no runner
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql postgresql-client
+          sudo service postgresql start
+          sudo -u postgres psql -c "CREATE USER nyxcash WITH PASSWORD 'nyxcash';"
+          sudo -u postgres psql -c "CREATE DATABASE nyxcash OWNER nyxcash;"
+
+      - name: Sobe a aplicação (dev, rate limit desligado p/ não interferir)
+        env:
+          DB_URL: jdbc:postgresql://localhost:5432/nyxcash
+          DB_USERNAME: nyxcash
+          DB_PASSWORD: nyxcash
+          SPRING_PROFILES_ACTIVE: dev
+          FOXCASH_ADMIN_API_KEY: dev-only-admin-api-key
+          # O rate limit (20 req/min/IP) é proteção de abuso em produção, não
+          # alvo deste teste — desligado para a carga não receber 429. Env do
+          # binding foxcash.security.rate-limit.enabled (FOXCASH_RATE_LIMIT_ENABLED
+          # NÃO funciona — o prefixo é foxcash.security.rate-limit).
+          FOXCASH_SECURITY_RATE_LIMIT_ENABLED: 'false'
+        run: |
+          mvn -B spring-boot:run > /tmp/load-boot.log 2>&1 &
+          for i in $(seq 1 60); do
+            # Liveness público do actuator (observabilidade 2026-08-07).
+            curl -sf http://localhost:8080/actuator/health > /dev/null 2>&1 && { echo "app pronta"; break; }
+            sleep 2
+          done
+          curl -sf http://localhost:8080/actuator/health > /dev/null 2>&1 || { echo "app nao subiu"; cat /tmp/load-boot.log; exit 1; }
+
+      # Concorrência: 50 VUs simultâneas (login + rota autenticada) — < 1% de
+      # erros sempre; p95 com envelope do runner (2 vCPUs): P95_MAX_MS=5000
+      # (p95≈3.75s observado — 50 VUs de login BCrypt são CPU-bound). Sem o env,
+      # o script mantém o limite estrito p95<1000ms (execução local/manual).
+      # Cenários longos (load/stress do load.js) ficam para execução manual/runner dedicado.
+      - name: k6 — concorrência (50 VUs simultâneas)
+        uses: grafana/setup-k6-action@v1
+        with:
+          # Pinned: `latest` retornava "Unexpected HTTP response: 404" no setup
+          # (bug 2026-08-07). v1.8.0 é a última da linha 1.x (estável; evita
+          # breaking changes do k6 2.x). O script usa só APIs estáveis.
+          k6-version: 1.8.0
+
+      - name: k6 run concurrency.js
+        run: k6 run load-tests/k6/concurrency.js --env BASE_URL=http://localhost:8080 --env P95_MAX_MS=5000

@@ -1,0 +1,53 @@
+# vector.toml — Vector Log Forwarder (FoxCash → Axiom)
+#
+# Recebe logs do log drain da plataforma Railway (HTTP POST, JSON) e reenvia
+# para o ingest do Axiom. A porta 8080 é o alvo do log drain (Railway →
+# Project → Observability → Log drain → http://<vector>.railway.internal:8080).
+#
+# Config via env (definidas no Railway):
+#   AXIOM_INGEST_URL — URL do ingest (dataset foxcash)
+#   AXIOM_API_TOKEN  — token de ingest do Axiom (escopado ao dataset)
+#
+# OBS: campos TIPADOS (ex.: address de socket) NÃO expandem ${VAR} no Vector —
+# o endereço de escuta é fixo (0.0.0.0:8080). Só campos de string (uri/token)
+# usam interpolação.
+
+[sources.railway_drain]
+type = "http_server"
+address = "0.0.0.0:8080"
+# O drain do Railway envia JSON de uma linha por evento; aceitamos como
+# recebido e anexamos metadados de chegada (o Axiom indexa por _time).
+decoding = { codec = "json" }
+
+[transforms.normalize]
+type = "remap"
+inputs = ["railway_drain"]
+source = '''
+  # Garante o campo _time exigido pelo Axiom (timestamp de chegada).
+  if !exists(._time) {
+    ._time = now()
+  }
+  # Normaliza o nível de log se ausente.
+  if !exists(.level) {
+    .level = "info"
+  }
+  .service = "foxcash"
+'''
+
+[sinks.axiom]
+type = "http"
+inputs = ["normalize"]
+# URL do ingest hardcoded: campos TIPADOS (uri/address) não expandem ${VAR} no
+# Vector v0.57 — o valor literal quebraria com "invalid uri character". A URL é
+# pública (não é segredo). O TOKEN é injetado no boot pelo startCommand (sed
+# substitui __AXIOM_API_TOKEN__ pelo valor da env AXIOM_API_TOKEN — o Vector
+# também não interpola ${VAR} em strings, e o token nunca fica no repo).
+uri = "https://api.axiom.co/api/v1/datasets/foxcash/ingest"
+method = "post"
+encoding = { codec = "json" }
+auth = { strategy = "bearer", token = "__AXIOM_API_TOKEN__" }
+request = { headers = { "Content-Type" = "application/json" } }
+# Fail-open: se o Axiom estiver fora, descarta em vez de segurar (o log do
+# console do Railway continua existindo).
+buffer = { type = "memory", max_events = 500, when_full = "drop_newest" }
+healthcheck = { enabled = false }

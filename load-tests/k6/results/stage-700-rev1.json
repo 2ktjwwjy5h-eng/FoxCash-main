@@ -1,0 +1,328 @@
+{
+    "metrics": {
+        "webhook_duration": {
+            "p(95)": 923.8980199999985,
+            "avg": 332.7495003157569,
+            "min": 199.2499,
+            "med": 227.0876,
+            "max": 5795.7129,
+            "p(90)": 302.98948000000007
+        },
+        "sale_ok": {
+            "passes": 32937,
+            "fails": 0,
+            "value": 1
+        },
+        "http_req_blocked": {
+            "p(90)": 0,
+            "p(95)": 0,
+            "avg": 2.4770961540795566,
+            "min": 0,
+            "med": 0,
+            "max": 395.1006
+        },
+        "checks": {
+            "passes": 32937,
+            "fails": 0,
+            "value": 1
+        },
+        "iteration_duration": {
+            "avg": 816.0063354130691,
+            "min": 411.1527,
+            "med": 485.753,
+            "max": 6791.5232,
+            "p(90)": 2426.5907600000005,
+            "p(95)": 2834.72406
+        },
+        "http_req_sending": {
+            "med": 0,
+            "max": 9.6122,
+            "p(90)": 0,
+            "p(95)": 0.5028,
+            "avg": 0.03171043177473673,
+            "min": 0
+        },
+        "vus": {
+            "value": 368,
+            "min": 0,
+            "max": 700
+        },
+        "vus_max": {
+            "value": 700,
+            "min": 700,
+            "max": 700
+        },
+        "http_req_connecting": {
+            "p(95)": 0,
+            "avg": 1.1881045923476026,
+            "min": 0,
+            "med": 0,
+            "max": 119.4007,
+            "p(90)": 0
+        },
+        "sale_5xx": {
+            "passes": 0,
+            "fails": 0,
+            "thresholds": {
+                "rate<0.0001": false
+            },
+            "value": 0
+        },
+        "http_req_receiving": {
+            "min": 0,
+            "med": 0,
+            "max": 84.7912,
+            "p(90)": 0,
+            "p(95)": 0.513,
+            "avg": 0.07618231331735346
+        },
+        "iterations": {
+            "count": 32937,
+            "rate": 429.27027396408926
+        },
+        "http_req_tls_handshaking": {
+            "p(90)": 0,
+            "p(95)": 0,
+            "avg": 1.2853678763236938,
+            "min": 0,
+            "med": 0,
+            "max": 140.2111
+        },
+        "http_req_duration": {
+            "p(95)": 2144.131984999999,
+            "avg": 405.46813600904005,
+            "min": 199.2499,
+            "med": 233.2048,
+            "max": 6375.9074,
+            "p(90)": 397.5875700000004
+        },
+        "dropped_iterations": {
+            "count": 9064,
+            "rate": 118.13175951697195
+        },
+        "http_reqs": {
+            "count": 65914,
+            "rate": 859.0618707857116
+        },
+        "data_sent": {
+            "count": 16359748,
+            "rate": 213217.76439698398
+        },
+        "http_req_duration{expected_response:true}": {
+            "max": 6375.9074,
+            "p(90)": 397.5875700000004,
+            "p(95)": 2144.131984999999,
+            "avg": 405.46813600904005,
+            "min": 199.2499,
+            "med": 233.2048
+        },
+        "data_received": {
+            "count": 32715100,
+            "rate": 426378.2354119251
+        },
+        "http_req_failed": {
+            "passes": 0,
+            "fails": 65914,
+            "thresholds": {
+                "rate<0.001": false
+            },
+            "value": 0
+        },
+        "http_req_waiting": {
+            "avg": 405.36024326394886,
+            "min": 198.1542,
+            "med": 233.1142,
+            "max": 6375.9074,
+            "p(90)": 397.33091000000087,
+            "p(95)": 2143.8006149999983
+        },
+        "charge_duration": {
+            "min": 207.0549,
+            "med": 260.8554,
+            "max": 6375.9074,
+            "p(90)": 1046.88012,
+            "p(95)": 2355.1257399999995,
+            "avg": 478.19920966997734
+        }
+    },
+    "setup_data": {
+        "keyBase": "cap-1786239997198",
+        "merchants": [
+            {
+                "apiKey": "mch_3aff020f8b7c7539c181fa8bcd8c36d0",
+                "merchantId": "29950416-b41d-4616-886e-e8c840fc0c04"
+            },
+            {
+                "apiKey": "mch_258632d87311c6a5120ba4fd3ac8a8e0",
+                "merchantId": "7d84f253-ad9a-4d76-b3be-150d9f87aaec"
+            },
+            {
+                "apiKey": "mch_bf92229097de16b20bc56afb5ec4a708",
+                "merchantId": "54803e98-8f3a-4ef3-9336-e3d3c574a578"
+            },
+            {
+                "apiKey": "mch_6901665ef22d6c995194e5079f01d048",
+                "merchantId": "52621085-60ad-4fca-a5a3-8325db428517"
+            },
+            {
+                "apiKey": "mch_9e06461760428f9b9db34d036be293d9",
+                "merchantId": "60fc0fa2-0bfd-4b2b-9012-485f5df62e47"
+            },
+            {
+                "apiKey": "mch_8ccc9b829566e442d0b8bc28345858bb",
+                "merchantId": "634e864a-812f-469f-9bee-f209160bfff6"
+            },
+            {
+                "apiKey": "mch_37cb3746731094d270b91813a4443a93",
+                "merchantId": "f5b6c638-53f0-41f2-9a26-cbdb24346758"
+            },
+            {
+                "apiKey": "mch_fca02bcdd079215bb588992f7324373c",
+                "merchantId": "abbea7d4-31da-4085-9c4a-967b9109caf6"
+            },
+            {
+                "apiKey": "mch_20d8f2fb7e08915b06961f8223adc86c",
+                "merchantId": "2c72c72f-220c-41a1-a09e-30f2f5c600d9"
+            },
+            {
+                "apiKey": "mch_171bf574d31fdf0f1eb51fb423e420c8",
+                "merchantId": "b4063a0d-53cc-4a72-826e-0e78d9ade1f4"
+            },
+            {
+                "merchantId": "595812ec-7452-489b-9690-96790ce342da",
+                "apiKey": "mch_157749a067bdf76b60668c4b75be75db"
+            },
+            {
+                "apiKey": "mch_99f4c4031ff40161a749c026a9d0b33d",
+                "merchantId": "e9877a5c-c42c-47d9-a976-560788ee30d8"
+            },
+            {
+                "apiKey": "mch_6f5caa35374ce8eb6496cdb0027134ce",
+                "merchantId": "813a45e4-b96d-4926-9356-6e43e5a38adb"
+            },
+            {
+                "apiKey": "mch_9be4edac3cead88847ab09475031912b",
+                "merchantId": "e6221624-f8e4-4bf5-b6e0-f63968b2ec48"
+            },
+            {
+                "apiKey": "mch_a7605876fca114aa5d7e2ffcff913b8a",
+                "merchantId": "43bd4deb-c958-4195-8ca4-25f306afaf10"
+            },
+            {
+                "apiKey": "mch_c0b6a80443e77732d0082e84b646a689",
+                "merchantId": "e5bb6a1f-01de-4ea3-af7b-c95640888598"
+            },
+            {
+                "apiKey": "mch_befc88cc83603cdd25646d73e7e5e862",
+                "merchantId": "f5f03dc2-501d-4cbe-8a15-6f7b54c0a426"
+            },
+            {
+                "apiKey": "mch_de4790d7dc28ea00c7bdad027542ddd1",
+                "merchantId": "e7cafc2a-349a-4926-8309-3badb1dc2d27"
+            },
+            {
+                "apiKey": "mch_8db066e5d58e9531cbe25b4e077ee023",
+                "merchantId": "10fdae8f-29c1-4624-b640-9970b7d18f66"
+            },
+            {
+                "apiKey": "mch_5452160f6040f82be14c399390ad0bd4",
+                "merchantId": "5232210e-da0c-4533-8c6d-97b65ee7495c"
+            },
+            {
+                "apiKey": "mch_19a80a6b4104d24e8d05d2984c10e850",
+                "merchantId": "0c71c563-a4d6-4c90-8039-db1ea9f99b1e"
+            },
+            {
+                "apiKey": "mch_70c74dfd65e54c9f7bfa2818eba194f2",
+                "merchantId": "a792f0ce-16fb-4742-8444-8bffbc4856ee"
+            },
+            {
+                "apiKey": "mch_38d0d3b1a903c7fa70bd18ba3253bb56",
+                "merchantId": "634425a0-c853-4d08-abeb-58e451699c4b"
+            },
+            {
+                "apiKey": "mch_c50f9f85d5b5930d80498e35d19e18c2",
+                "merchantId": "fded454f-19b6-4c19-a599-674b414778e4"
+            },
+            {
+                "apiKey": "mch_194d554e0057721001ac4d1c0ade7870",
+                "merchantId": "dd2ab34c-30c2-49c4-a202-85131bb5de0c"
+            },
+            {
+                "apiKey": "mch_b3b62d15fba835febd50c7e127990ae3",
+                "merchantId": "c346c0bf-83a1-4f8c-9fb0-4c1d68715a5c"
+            },
+            {
+                "apiKey": "mch_1d744d47691e918a62dbaa25afbf7223",
+                "merchantId": "59322046-185b-4a4e-8625-ddbda4d96632"
+            },
+            {
+                "apiKey": "mch_3453b7754c7eef9d8d4455f32ae3f55e",
+                "merchantId": "f3fbc403-1af2-46ab-92bf-365d9dbb7154"
+            },
+            {
+                "apiKey": "mch_ee9a0cffa62c1caf39eca92e45b9959e",
+                "merchantId": "069abd1b-96f2-4298-b8f8-2270980beda3"
+            },
+            {
+                "merchantId": "c47f2b1d-37f3-4cda-be37-97881d2c5ff2",
+                "apiKey": "mch_88dc6be4526d303ba7399ff63232efc1"
+            },
+            {
+                "apiKey": "mch_1309b45f3e0040e579fcbe82faab6a39",
+                "merchantId": "12845336-4444-434c-aef2-259c630a63a7"
+            },
+            {
+                "apiKey": "mch_1923edfc9188361588a207bfcd14e301",
+                "merchantId": "7c6567f7-f669-49ee-badd-ef9dba86a910"
+            },
+            {
+                "apiKey": "mch_4a179a52930cff39c709a9da7cc7ccec",
+                "merchantId": "f22197f8-62e5-4298-a62e-e592d9f1b35a"
+            },
+            {
+                "apiKey": "mch_94df3b9b5ffaf3824dbfc91e6cdc98ee",
+                "merchantId": "4e9c1efb-fb96-46f5-ac28-13dbffd53669"
+            },
+            {
+                "apiKey": "mch_3d917e667b7a19e040333654dcb06b7f",
+                "merchantId": "903bdf2a-2038-468f-a8d2-2d48fcfb87f6"
+            },
+            {
+                "apiKey": "mch_b37396ae67fd797215e9961c7781c613",
+                "merchantId": "86f8c076-4ede-4803-81ae-4fb63d96e6a9"
+            },
+            {
+                "apiKey": "mch_e04d531c309f1d74fdd53a6c98e4d2b9",
+                "merchantId": "0602fa26-0e6d-46ab-b492-7434b839aa35"
+            },
+            {
+                "apiKey": "mch_a360747e3230e591d6c9f81df3eabadd",
+                "merchantId": "e3515678-6247-4906-82b4-5bbaccd101af"
+            },
+            {
+                "apiKey": "mch_95bb09882087a1c44d82c2eea9290a6c",
+                "merchantId": "6271d94e-e8f2-459d-821b-a7f1350bbd4f"
+            },
+            {
+                "apiKey": "mch_61c47bed6e01ea6da567e3c36208adf6",
+                "merchantId": "6682e991-ecf2-446f-ac64-63d2dfbbb6ee"
+            }
+        ]
+    },
+    "root_group": {
+        "groups": {},
+        "checks": {
+                "webhook PAID 204": {
+                    "name": "webhook PAID 204",
+                    "path": "::webhook PAID 204",
+                    "id": "3018557a5a8bc4ed3c715ab8ff261a54",
+                    "passes": 32937,
+                    "fails": 0
+                }
+            },
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e"
+    }
+}

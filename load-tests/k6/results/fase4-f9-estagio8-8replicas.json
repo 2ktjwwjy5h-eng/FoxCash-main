@@ -1,0 +1,42 @@
+{
+  "fase": "62 F9 — scale-out estágio 8 réplicas",
+  "data": "2026-08-09 ~21:20 -03:00 (deploy loadgen c855e4e1, rede privada foxcash.railway.internal:8080)",
+  "configuracao": {
+    "app_replicas": 8,
+    "loadgen_replicas": 8,
+    "stage_por_gerador": 325,
+    "pool_por_gerador": 33,
+    "max_vus_por_gerador": 650,
+    "duracao": "45s",
+    "chegada_total_alvo": "8 x 325 = 2600/s",
+    "rate_limit_app": "elevado (10M) — não mascara o teto real",
+    "webhook": "PAID assinado (HMAC-SHA256) com verify-signature=true",
+    "pool_hikari_app": "100 x 8 = 800 desejadas (Postgres max 500 — EXCEDEU)"
+  },
+  "resultado_por_gerador": [
+    { "gerador": "A", "iterations": 11113, "sale_ok": "100.00%", "sale_5xx": "0.00%", "dropped": 3513, "charge_p95_ms": 5495.19 },
+    { "gerador": "B", "iterations": 10793, "sale_ok": "100.00%", "sale_5xx": "0.00%", "dropped": 3832, "charge_p95_ms": 5786.08 },
+    { "gerador": "C", "iterations": 11070, "sale_ok": "100.00%", "sale_5xx": "0.00%", "dropped": 3556, "charge_p95_ms": 5611.38 },
+    { "gerador": "D", "iterations": 10965, "sale_ok": "100.00%", "sale_5xx": "0.00%", "dropped": 3661, "charge_p95_ms": 5482.85 },
+    { "gerador": "E", "iterations": 10872, "sale_ok": "100.00%", "sale_5xx": "0.00%", "dropped": 3753, "charge_p95_ms": 5751.20 },
+    { "gerador": "F", "iterations": 11046, "sale_ok": "100.00%", "sale_5xx": "0.00%", "dropped": 3580, "charge_p95_ms": 5751.20 },
+    { "gerador": "G", "iterations": 10965, "sale_ok": "100.00%", "sale_5xx": "0.00%", "dropped": 3660, "charge_p95_ms": 4564.00 },
+    { "gerador": "H", "iterations": 12159, "sale_ok": "100.00%", "sale_5xx": "0.00%", "dropped": 2466, "charge_p95_ms": 4564.00 }
+  ],
+  "agregado": {
+    "total_iterations": 88983,
+    "vendas_s": 1554.0,
+    "dropped_total": 28021,
+    "sale_ok": "100.00%",
+    "sale_5xx": "0.00%"
+  },
+  "conclusao": "8 réplicas sustentam ~1.554 vendas/s (vs ~1.246/s com 4 réplicas) — scale-out NÃO LINEAR (2x réplicas -> apenas +25% throughput). p95 charge disparou para ~4,5-5,8s. GARGALO CENTRAL IDENTIFICADO E MEDIDO: Postgres max_connections=500 esgotado (pool Hikari 100 x 8 = 800 desejadas; 'too many clients already' ao conectar no banco). A app manteve 0% 5xx e 100% sale_ok mesmo sob contenção de conexões (integridade intacta), mas o throughput estagnou e a latência degradou — o limite de conexões do Postgres é o teto do scale-out com pool 100/réplica.",
+  "gate_pos_carga": {
+    "dups_idempotency": 0,
+    "reconciliation_issues_open": 0,
+    "wallet_vs_ledger": 0,
+    "deadlocks": 0,
+    "outbox": "0 FAILED / 228.010 PENDING (drenando) / 631.979 SENT",
+    "nota": "gate rodado com app reduzido a 4 réplicas (Postgres 500/500 esgotado impedia conexão)"
+  }
+}

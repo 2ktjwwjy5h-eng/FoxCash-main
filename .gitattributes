@@ -1,0 +1,9 @@
+# Shell scripts: SEMPRE LF (nunca CRLF).
+#
+# Motivo (incidente 2026-08-17): o contexto de build do Docker via
+# `railway up ./ops --path-as-root` envia os arquivos COMO ESTÃO EM DISCO.
+# No Windows com `core.autocrlf=true`, o checkout grava CRLF — o shebang vira
+# `#!/usr/bin/env bash\r` e o Linux falha com `env: can't execute 'bash'`
+# (backup-cron do Railway ficou sem backup por isso). Este atributo força LF
+# para scripts shell em qualquer checkout/plataforma.
+*.sh text eol=lf

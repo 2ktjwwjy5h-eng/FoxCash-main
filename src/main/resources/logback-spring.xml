@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Logback estruturado (2026-08-07) — observabilidade.
+     - Dev (default): console legível (ts, level, logger, message).
+     - Prod (spring.profiles.active=prod): formato ESTRUTURADO em uma linha
+       (ts=... level=... logger=... requestId=... msg=...), parseável por
+       Loki/Datadog/ELK. O requestId vem do MDC (RequestIdFilter injeta
+       X-Request-Id — rastreabilidade fim-a-fim).
+     Config: LOG_LEVEL (default INFO) → nível global.
+-->
+<configuration>
+
+    <property name="LOG_LEVEL" value="${LOG_LEVEL:-INFO}"/>
+
+    <!-- Legível (dev). -->
+    <property name="TEXT_PATTERN"
+              value="%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] %logger{36} - %msg%n"/>
+
+    <!-- Estruturado (prod): campos fixos + MDC requestId/traceId/spanId; quebras
+         de linha no msg normalizadas p/ manter 1 linha por evento. O traceId/
+         spanId vêm do Micrometer Tracing (Spec 57) — vazios quando não há trace
+         ativo. -->
+    <property name="STRUCTURED_PATTERN"
+              value="ts=%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} level=%-5level logger=%logger{36} requestId=%X{requestId:-} traceId=%X{traceId:-} spanId=%X{spanId:-} msg=%replace(%msg){'[\r\n]+',' '}%nopex%n"/>
+
+    <appender name="CONSOLE_TEXT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${TEXT_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <appender name="CONSOLE_STRUCTURED" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${STRUCTURED_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- Log drain p/ Axiom (Spec 95): o drain da plataforma (Vector Log
+         Forwarder — opção A) assumiu em 2026-08-20. O appender direto (opção B)
+         foi DESLIGADO para não duplicar eventos (runbook ops/log-drain.md §2.3).
+         Config do appender preservada abaixo por referência (reativar só se o
+         Vector sair do ar e quiser voltar ao appender).
+
+         appender AXIOM (opção B — desligado):
+         url=https://api.axiom.co/api/v1/datasets/foxcash/ingest (minúsculo),
+         token=${AXIOM_API_TOKEN:-}, fail-open. -->
+
+    <!-- Ruído de boot de libs em WARN; liveness do health em INFO. -->
+    <logger name="com.zaxxer.hikari" level="WARN"/>
+    <logger name="org.hibernate" level="WARN"/>
+    <logger name="org.flywaydb" level="INFO"/>
+    <logger name="com.foxcash" level="${LOG_LEVEL}"/>
+
+    <!-- <springProfile> NÃO pode aninhar dentro de <root>/<appender>/<logger>
+         (sanity checker do Spring Boot emite WARN no boot). A seleção por perfil
+         é feita no NÍVEL SUPERIOR, cada profile definindo seu próprio <root>.
+         Verificado (Spring Boot 3.3.5 + Logback 1.5.x): prod → estruturado,
+         demais → texto, 0 WARNs. -->
+    <springProfile name="prod">
+        <root level="${LOG_LEVEL}">
+            <appender-ref ref="CONSOLE_STRUCTURED"/>
+        </root>
+    </springProfile>
+    <springProfile name="!prod">
+        <root level="${LOG_LEVEL}">
+            <appender-ref ref="CONSOLE_TEXT"/>
+        </root>
+    </springProfile>
+
+</configuration>

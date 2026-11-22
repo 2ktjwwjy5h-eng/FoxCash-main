@@ -1,0 +1,601 @@
+spring:
+  application:
+    name: foxcash
+  autoconfigure:
+    # Spec 57 / Etapa 1 (2026-08-09): exporter OTLP via TracingConfig (no-op sem
+    # FOXCASH_OTLP_ENDPOINT). Exclui o auto-config OTLP do Spring para NUNCA tentar
+    # localhost:4318 (spam de erro + bloqueio potencial do span export — suspeito
+    # do hang do dispatcher pos-deploy Fase 2A, docs §11.6).
+    # Spec 131 (2026-08-16): o app NÃO usa UserDetailsService (auth por filters
+    # customizados: ApiKeyAuthFilter/MasterAuthFilter/MerchantPortalAuthFilter no
+    # SecurityConfig). Sem a exclusão, o Boot detecta o fallback default e loga
+    # "Using generated security password: <uuid>" no boot — superfície de
+    # segurança não mapeada (Basic auth com user default). Excluir o auto-config
+    # elimina a senha gerada (nenhum user default existe no app).
+    exclude:
+      - org.springframework.boot.actuate.autoconfigure.tracing.otlp.OtlpAutoConfiguration
+      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+      # Spec 134: o RabbitMQ é OPT-IN (foxcash.rabbit.enabled=false default).
+      # O RabbitAutoConfiguration do Boot cria um RabbitAdmin que CONECTA no
+      # broker durante o boot — com a feature desligada (default) a app nunca
+      # deve tocar o broker. A exclusão é ativa SEMPRE; os beans completos
+      # (factory/template/admin) são fornecidos pelo RabbitConfig quando
+      # foxcash.rabbit.enabled=true (mesmo padrão da exclusão OTLP do Spec 57).
+      - org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/nyxcash}
+    username: ${DB_USERNAME:nyxcash}
+    password: ${DB_PASSWORD:nyxcash}
+    hikari:
+      # Spec 60: pool dimensionado (baseline 20) — query média ~5ms → ~4000 req/s
+      # de DB > teto atual; coerente com threads Tomcat e Postgres Railway.
+      # Calibrar no benchmark (Hikari alto demais estoura o Postgres/threads).
+      maximum-pool-size: ${FOXCASH_DB_POOL_SIZE:20}
+      # Reciclagem proativa de conexões: default do Hikari é 30min (maxLifetime);
+      # 25min recicla antes de qualquer timeout de conexão ociosa de proxy/keepalive
+      # (ex.: camada TCP do Railway), evitando rajadas de "connection reset by peer"
+      # no Postgres. O isValid() no borrow já cobre o caso — isto apenas reduz o ruído.
+      max-lifetime: ${FOXCASH_DB_MAX_LIFETIME:1500000}
+  servlet:
+    multipart:
+      # Spec 79/D7: upload de mídia do broadcast (imagem ≤10MB; vídeo/áudio
+      # ≤50MB). O teto do Spring Multipart é o limite real de arquivo/request —
+      # 60MB cobre o maior arquivo + overhead multipart. Os filtros de body
+      # (RequestBodySizeFilter/RequestBodyInspectionFilter) PULAM multipart (o
+      # parse multipart é do container; re-embrulhar quebraria getParts()).
+      max-file-size: ${FOXCASH_MULTIPART_MAX_FILE_SIZE:60MB}
+      max-request-size: ${FOXCASH_MULTIPART_MAX_REQUEST_SIZE:64MB}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  data:
+    redis:
+      # Spec 43 (auditoria): só o rate limit usa Redis (StringRedisTemplate via
+      # script Lua) — NÃO há repositórios Redis. Desliga o scanning de
+      # repositórios Redis para evitar ruído de boot ("Bootstrapping Spring Data
+      # Redis repositories" / warnings de store assignment nos repositórios JPA).
+      repositories:
+        enabled: false
+  lifecycle:
+    # Spec 61 (2026-08-08): timeout do dreno no shutdown graceful — o Tomcat
+    # para de aceitar novas conexões e completa as em voo até este limite
+    # antes de encerrar (deploy/rollout sem cortar resposta no meio).
+    timeout-per-shutdown-phase: ${FOXCASH_SHUTDOWN_TIMEOUT:30s}
+
+# Observabilidade (2026-08-07): actuator + métricas Prometheus.
+#   - /actuator/health     → liveness/readiness (liveness sem auth p/ orquestrador;
+#                            os demais endpoints exigem ROLE_ADMIN — ver SecurityConfig)
+#   - /actuator/prometheus → scrape Prometheus/Grafana
+#   - /actuator/info       → versão/build (info.build.enabled=true abaixo)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: when_authorized
+      probes:
+        enabled: true
+  health:
+    # Redis é OPCIONAL (rate limit default é memory — ADR-010; RedisRateLimitStore
+    # é fail-open). Desabilitar o indicador: sem Redis o app funciona
+    # (single-instance) e o health NÃO pode ficar DOWN por infra opcional.
+    redis:
+      enabled: false
+    # Mail é OPCIONAL (Spec 45 — disponibilidade: e-mail quebrado não derruba o
+    # gateway; Spec 55 — auditoria de produção 2026-08-07: o MailHealthIndicator
+    # tenta localhost:587 sem SMTP configurado e derruba o health agregado com
+    # 503, embora liveness/readiness fiquem UP). Desabilitado por default;
+    # opt-in via FOXCASH_MAIL_HEALTH_ENABLED=true quando o SMTP estiver configurado.
+    mail:
+      enabled: ${FOXCASH_MAIL_HEALTH_ENABLED:false}
+  info:
+    build:
+      enabled: true
+    env:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  tracing:
+    # Spec 57 (2026-08-07): tracing distribuído — Micrometer + bridge OTel +
+    # exporter OTLP. Sampling default 10%; sem collector (FOXCASH_OTLP_ENDPOINT
+    # vazio/ausente → endpoint local padrão) a app NÃO derruba nem bloqueia —
+    # o exporter falha em background com retry e o traceId/spanId continuam
+    # nos logs (MDC). Configurar FOXCASH_OTLP_ENDPOINT para um collector real
+    # (Tempo/Grafana/Jaeger).
+    enabled: true
+    sampling:
+      probability: ${FOXCASH_TRACING_SAMPLING_PROBABILITY:0.1}
+  otlp:
+    tracing:
+      # OTLP HTTP (4318) — o exporter exige endpoint http(s)://; o default local
+      # garante fail-open sem collector (falha assíncrona, sem afetar requisições).
+      endpoint: ${FOXCASH_OTLP_ENDPOINT:http://localhost:4318/v1/traces}
+
+server:
+  port: 8080
+  # Spec 61 (2026-08-08): shutdown graceful — no deploy (SIGTERM) o Tomcat
+  # para de aceitar novas conexões e drena as requisições em voo (timeout em
+  # spring.lifecycle.timeout-per-shutdown-phase). Complementa o
+  # waitForTasksToCompleteOnShutdown do scheduler (Spec 53).
+  shutdown: graceful
+  tomcat:
+    # Spec 60 (2026-08-08): tuning explícito — baseline a calibrar no benchmark
+    # Railway (50→5000 VUs). Objetivo: degradação controlada, não maximizar req/s.
+    max-connections: ${FOXCASH_TOMCAT_MAX_CONNECTIONS:1000}   # default 8192 — anti-DoS de sockets
+    accept-count: ${FOXCASH_TOMCAT_ACCEPT_COUNT:200}           # fila de aceite (backlog)
+    connection-timeout: ${FOXCASH_TOMCAT_CONNECTION_TIMEOUT:10000} # ms — descarta slow-connectors
+    keep-alive-timeout: ${FOXCASH_TOMCAT_KEEP_ALIVE_TIMEOUT:30000} # ms — ocioso encerra
+    max-keep-alive-requests: ${FOXCASH_TOMCAT_MAX_KEEP_ALIVE_REQUESTS:100} # recicla conexões
+  compression:
+    # Spec 56 (auditoria de produção 2026-08-07): compressão gzip de respostas
+    # — nenhuma resposta vinha comprimida em produção. JSON é o payload
+    # dominante da API; respostas < 1KB não compensam o overhead do gzip.
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/plain,text/css,application/javascript
+    min-response-size: 1024
+
+# Modelo de precificacao fixa FoxCash
+foxcash:
+  pricing:
+    transaction-fee: 0.50
+    monthly-fee: 69.95
+    # Spec 88: taxa por saque do lojista (manual + automático; admin isento;
+    # devolvida integralmente se o saque falhar no PSP).
+    withdrawal-fee: 2.50
+    # Spec 58: teto de cobranças PENDENTES por lojista (degradação controlada —
+    # baseline 100; calibrar no benchmark). Acima disso, nova cobrança → 409.
+    max-pending-charges: 100
+  portal:
+    # Spec 46/63: serve a SPA do portal (build em src/main/resources/static) —
+    # rotas públicas (/login, /dashboard, ...) + fallback index.html + CSP da SPA.
+    # Default false (API pura); ativa com FOXCASH_PORTAL_SERVE_FRONTEND=true.
+    serve-frontend: ${FOXCASH_PORTAL_SERVE_FRONTEND:false}
+  console:
+    # Spec 71: serve a SPA do Master Console (build em
+    # src/main/resources/static/console) — rotas públicas (/console, /console/**)
+    # + fallback console/index.html + CSP da SPA (compartilhada com o portal).
+    # Default false (API pura); ativa com FOXCASH_CONSOLE_SERVE_FRONTEND=true.
+    serve-frontend: ${FOXCASH_CONSOLE_SERVE_FRONTEND:false}
+  crypto:
+    # Chave mestra AES-256 — SEM default (homologação 2026-08-05): sem
+    # FOXCASH_CRYPTO_SECRET o boot falha (fail-fast). O perfil dev
+    # (application-dev.yml) fornece o valor de desenvolvimento; produção exige
+    # a env var (application-prod.yml).
+    secret: ${FOXCASH_CRYPTO_SECRET}
+  security:
+    # true => exige HTTPS (requiresSecure). Em producao (application-prod.yml) e true.
+    require-https: false
+    # Chave admin da API (Spec 12) — SEM default (homologação 2026-08-05): sem
+    # FOXCASH_ADMIN_API_KEY o boot falha. O perfil dev fornece o valor fake; produção
+    # exige a env var (fail-fast).
+    admin-api-key: ${FOXCASH_ADMIN_API_KEY}
+    # Confia em X-Forwarded-For? (auditoria 2026-08-05/M10). Default false:
+    # usa remoteAddr — o header falsificado pelo cliente nao burla o rate limit
+    # nem falsifica o IP da auditoria. true apenas atras de proxy reverso que
+    # SOBRESCREVE o header (FOXCASH_TRUST_PROXY=true).
+    trust-proxy: ${FOXCASH_TRUST_PROXY:false}
+    # Spec 65 (Fase 1): throttle do last_used_at da API key (Spec 24) — o UPDATE
+    # de uso roda no maximo 1x por intervalo por chave (por instancia; era o hot
+    # spot de escrita do caminho do charge). Default 60s (env FOXCASH_API_KEY_RECORD_USE_INTERVAL).
+    api-key:
+      record-use-interval: ${FOXCASH_API_KEY_RECORD_USE_INTERVAL:60s}
+    # Spec 63 (Fase C): Turnstile (Cloudflare) — bot mitigation no login do
+    # portal e cadastro de lojista. Default OFF (dev/CI/E2E passam sem token):
+    # ativa apenas com enabled=true E secret-key presente (envs
+    # FOXCASH_TURNSTILE_ENABLED + FOXCASH_TURNSTILE_SECRET_KEY). A site-key é pública
+    # (frontend); o secret nunca vai para yml (env var). Timeout do siteverify
+    # 5s default — acima disso a verificação faz fail-open (WARN throttled,
+    # mesmo padrão ADR-010: uma queda do Turnstile nunca derruba o login).
+    turnstile:
+      enabled: ${FOXCASH_TURNSTILE_ENABLED:false}
+      site-key: ${FOXCASH_TURNSTILE_SITE_KEY:}
+      secret-key: ${FOXCASH_TURNSTILE_SECRET_KEY:}
+      timeout: ${FOXCASH_TURNSTILE_TIMEOUT:5s}
+    # Spec 63 (camada app): inspecao de corpo em POST/PUT/PATCH — detecta
+    # SQLi/XSS/path traversal no RAW body (padroes calibrados por combinacao,
+    # nao palavras soltas) e responde 403 body_inspection_failed ANTES da auth e
+    # do rate limit. Cobre o body que o WAF do Cloudflare Free nao inspeciona.
+    # Desligavel por env (FOXCASH_BODY_INSPECTION_ENABLED=false) se algum falso
+    # positivo aparecer; webhooks do PSP excluidos (reentrega nunca sacrificada).
+    body-inspection:
+      enabled: ${FOXCASH_BODY_INSPECTION_ENABLED:true}
+      # Teto de bytes inspecionados (default 1 MiB — espelha o RequestBodySizeFilter);
+      # acima disso a inspecao cobre so o prefixo, o corpo completo segue.
+      max-inspect-bytes: 1048576
+      excluded-paths:
+        - /webhooks/pix
+        - /webhooks/payouts
+        # Spec 74: o webhook do Telegram é público (update vindo dos servidores
+        # do Telegram) e o payload contém texto ARBITRÁRIO do usuário — pode
+        # conter combinações legítimas que casam padrões de SQLi/XSS. Excluído
+        # como os webhooks do PSP (a reentrega de updates nunca é sacrificada).
+        - /webhooks/telegram
+    # Spec 69: step-up MFA do master — acoes sensiveis exigem re-prova de posse
+    # (TOTP/recovery) na sessao dentro da janela. required-permissions default =
+    # as 6 acoes de alto impacto (Spec 98: + merchant.debit, merchant.ban);
+    # lista vazia/invalida derruba o boot (fail-closed).
+    master:
+      step-up:
+        required-permissions:
+          - withdrawal.administrative
+          - receivable.write_off
+          - invoice.collect
+          - master.profiles.manage
+          - merchant.debit
+          - merchant.ban
+        window: 15m
+    # Rate limiting (Spec 18, ADR-009; Spec 43 — M-05): janela fixa por IP +
+    # rota nas rotas publicas de abuso. Store selecionavel (ADR-010): memory
+    # (default, single-instance) | redis (multi-instancia, fail-open se o Redis
+    # cair) — env FOXCASH_RATE_LIMIT_STORE + SPRING_DATA_REDIS_*.
+    rate-limit:
+      enabled: true
+      max-requests: 20
+      window-seconds: 60
+      store: ${FOXCASH_RATE_LIMIT_STORE:memory}
+      # Spec 58: rate limit por PRINCIPAL autenticado (API key/token) nas rotas
+      # transacionais — baseline de calibração (não é meta; ajustar no benchmark
+      # Railway para cortar com 429 antes da saturação). A chave é por lojista
+      # (múltiplas chaves da mesma conta compartilham o bucket).
+      authenticated:
+        enabled: true
+        max-requests: 120
+        window-seconds: 60
+      # Spec 58: rede de segurança por IP em rotas transacionais (o bot polla
+      # GET /deliveries/pending — teto folgado). Baseline — calibrar.
+      transactional:
+        enabled: true
+        max-requests: 300
+        window-seconds: 60
+      # Spec 59: rate limit por IP nos webhooks públicos (/webhooks/pix e
+      # /webhooks/payouts) — teto GENEROSO (baseline 120/min) para não quebrar a
+      # reentrega legítima do PSP (minutos); o 429 corta flood ANTES do HMAC
+      # (CPU/DB). O backend já cobre replay (idempotência Specs 28/36).
+      webhook:
+        enabled: true
+        max-requests: 120
+        window-seconds: 60
+    # Spec 64: alertas de SEGURANCA (eventos de plataforma no outbox → webhook de
+    # operador, Spec 53/54). Limiar de rajada por tipo na janela + throttle global
+    # (no maximo 1 alerta por tipo a cada throttle-seconds). Sem webhook de
+    # operador configurado → fallback log (HttpMerchantNotifier). Payload sempre
+    # mascarado (sem IP/senha/token/segredo/email/documento).
+    alert:
+      enabled: ${FOXCASH_SECURITY_ALERT_ENABLED:true}
+      throttle-seconds: 300
+      # Spec 66 (Fase B): store dos contadores de rajada — 'memory' (default,
+      # por-instância) | 'redis' (agregado entre réplicas: o limiar vira GLOBAL —
+      # um flood distribuído não escapa do alerta; fail-open → fallback local
+      # quando o Redis cai, ADR-010).
+      store: ${FOXCASH_SECURITY_ALERT_STORE:memory}
+      login-failure:
+        threshold: 10
+        window-seconds: 60
+      rate-limit:
+        threshold: 20
+        window-seconds: 60
+      signature-failure:
+        threshold: 20
+        window-seconds: 60
+      # Rajada de bloqueios por inspecao de corpo (Spec 63 camada app) —
+      # threshold mais baixo: padroes de alta confianca, 5 em 1 min ja e ataque.
+      body-inspection:
+        threshold: 5
+        window-seconds: 60
+  logging:
+    # Sanitiza CPF/CNPJ nos logs de request/response (level DEBUG)
+    sanitized: true
+  master:
+    # Perfil master (Spec 13, ADR-007): seed do primeiro master + validade da sessao.
+    # SEM default de senha (homologação 2026-08-05): o perfil base não cria master
+    # com credencial conhecida — sem FOXCASH_MASTER_SEED_* o seed é pulado (log). O
+    # perfil dev fornece a senha fake; produção define por env var.
+    seed-username: ${FOXCASH_MASTER_SEED_USERNAME:}
+    seed-password: ${FOXCASH_MASTER_SEED_PASSWORD:}
+    session-ttl-seconds: 28800
+  auth:
+    # Recuperação de senha (Spec 40): validade do token one-time (default 30min)
+    # e exposição do token na resposta do forgot-password. SEGURO-POR-DEFAULT
+    # (homologação 2026-08-05): o perfil base não expõe o token (resposta sempre
+    # 204 — anti-enumeração); apenas o perfil dev (application-dev.yml) expõe.
+    reset-token-ttl-seconds: 1800
+    expose-reset-token: false
+    # Lockout de login do perfil master (auditoria 2026-08-05/B-08): apos
+    # max-login-attempts falhas seguidas, o master fica bloqueado por
+    # lockout-minutes. Complementa o rate limit por IP da rota de login.
+    max-login-attempts: 5
+    lockout-minutes: 15
+  risk:
+    # Limiares de risco (Spec 16, ADR-008) — Politicas de Uso §4. Configuraveis
+    # por env var (FOXCASH_RISK_*); chargeback/denuncias sem fonte de dados nesta
+    # versao (taxa 0), colunas prontas para alimentacao futura.
+    chargeback-alert-percent: 1.0
+    chargeback-suspend-percent: 3.0
+    refund-alert-percent: 5.0
+    complaints-alert-count: 3
+    # Spec 19: auto-suspend por chargeback. Spec 128 (decisao do usuario
+    # 2026-08-16): default FALSE — sem bloqueio de conta automatico (verticais
+    # de produtos digitais tem chargeback recorrente); reativavel por env var.
+    auto-suspend-enabled: ${FOXCASH_RISK_AUTO_SUSPEND_ENABLED:false}
+    # Spec 128: Risk Scoring Engine — unica acao automatica aprovada: MED 30d
+    # alto → reduzir rate_limit_rps/rpm (reversivel quando normaliza).
+    auto:
+      enabled: ${FOXCASH_RISK_AUTO_ENABLED:true}
+      med-threshold-percent: ${FOXCASH_RISK_AUTO_MED_THRESHOLD_PERCENT:10.0}
+      med-recover-percent: ${FOXCASH_RISK_AUTO_MED_RECOVER_PERCENT:5.0}
+      rate-limit-reduction-percent: ${FOXCASH_RISK_AUTO_RATE_LIMIT_REDUCTION_PERCENT:50.0}
+      default-rps: ${FOXCASH_RISK_AUTO_DEFAULT_RPS:5}
+      default-rpm: ${FOXCASH_RISK_AUTO_DEFAULT_RPM:300}
+      floor-rps: ${FOXCASH_RISK_AUTO_FLOOR_RPS:1}
+      floor-rpm: ${FOXCASH_RISK_AUTO_FLOOR_RPM:60}
+  fingerprint:
+    # Spec 141: device fingerprint do portal/cadastro — sinal de risco PASSIVO.
+    # O frontend envia um hash SHA-256 (64 hex) dos sinais do navegador no
+    # cadastro e no login; o backend grava e associa ao lojista (upsert
+    # atômico), mas NUNCA bloqueia (a decisão é do master). Desligável por env
+    # FOXCASH_FINGERPRINT_ENABLED=false.
+    enabled: ${FOXCASH_FINGERPRINT_ENABLED:true}
+    # Alerta FINGERPRINT_DEVICE_SHARED (webhook do operador, padrão Spec 64):
+    # o MESMO dispositivo em N contas distintas dispara aviso ao operador.
+    # threshold=2 → device em 2+ contas; 0/negativo = nunca alerta.
+    alert-threshold: ${FOXCASH_FINGERPRINT_ALERT_THRESHOLD:2}
+    # Throttle por hash: 1 alerta a cada intervalo (anti-spam).
+    alert-throttle-seconds: ${FOXCASH_FINGERPRINT_ALERT_THROTTLE_SECONDS:300}
+  scheduler:
+    # Cron do job mensal de faturas (UTC): 00:05 do dia 1 de cada mes
+    invoice-cron: "0 5 0 1 * *"
+    # Cron do monitoramento de risco (UTC): 03:00 todos os dias
+    risk-cron: "0 0 3 * * *"
+    # Cron da cobranca de faturas (Spec 33, UTC): 02:30 todos os dias
+    invoice-collection-cron: "0 30 2 * * *"
+    # Cron da reconciliacao do saldo (Spec 30, UTC): 04:00 todos os dias
+    reconciliation-cron: "0 0 4 * * *"
+    # Spec 53: pool de threads dos jobs (default 4 — antes o Spring usava 1 thread).
+    pool-size: ${FOXCASH_SCHEDULER_POOL_SIZE:4}
+    # Spec 53: retencao (dias) da trilha auditavel job_runs + cron do cleanup diario.
+    job-runs:
+      retention-days: ${FOXCASH_JOB_RUNS_RETENTION_DAYS:30}
+    job-runs-cleanup-cron: "0 45 4 * * *"
+  notification:
+    # Entrega de webhooks de saida (Spec 35): maximo de tentativas e base do
+    # backoff exponencial (next = base * 2^attempt).
+    max-attempts: 5
+    backoff-base-ms: 30000
+    # Lote maximo por execucao do dispatcher (auditoria 2026-08-05): cada
+    # notificacao roda na propria transacao, entao o lote limita a duracao de
+    # cada run. Spec 62 F8: configurável por env para aumentar a drenagem do
+    # outbox sem mudanca de codigo.
+    # Etapa 1 (pos-incidente Fase 2A 2026-08-09) + Spec 65 (meio-termo): teto
+    # ABSOLUTO do lote (500) — NAO deriva mais do lock ShedLock (reduzido
+    # PT40M->PT5M para takeover rapido de batch preso; overlap coberto por
+    # at-least-once + idempotencia do receptor). Acima de 500 o boot falha
+    # (fail-fast).
+    max-batch-size: ${FOXCASH_NOTIFICATION_MAX_BATCH_SIZE:500}
+    # Spec 65: maximo de lotes por aquisicao de lock — o dispatcher drena em
+    # loop ate esvaziar o backlog ou atingir este teto (dentro do MESMO lock
+    # ShedLock). Default 10.
+    max-batches-per-run: ${FOXCASH_NOTIFICATION_MAX_BATCHES_PER_RUN:10}
+    # Spec 62 F8 + Spec 65: intervalo entre execucoes do dispatcher (fixedDelay
+    # conta a partir do fim da execucao anterior) — poll menor drena o outbox
+    # mais rapido. Default PT10S (meio-termo pos-incidente).
+    poll-interval: ${FOXCASH_NOTIFICATION_POLL_INTERVAL:PT10S}
+    poll-initial-delay: ${FOXCASH_NOTIFICATION_POLL_INITIAL_DELAY:PT10S}
+    # Protecao SSRF (auditoria 2026-08-05): false (default) bloqueia URLs de
+    # webhook que resolvem para endereco interno/loopback/metadata cloud.
+    # Ligar apenas em dev/testes com receptor local (E2E usa 127.0.0.1).
+    allow-loopback: ${FOXCASH_NOTIFICATION_ALLOW_LOOPBACK:false}
+    # Spec 53: webhook de OPERADOR (eventos de plataforma, ex.: JOB_FAILED).
+    # URL + segredo configurados JUNTOS (fail-fast no boot). Sem URL, o alerta
+    # de falha de job fica em metrica + log estruturado + job_runs (fail-open).
+    operator-webhook-url: ${FOXCASH_NOTIFICATION_OPERATOR_WEBHOOK_URL:}
+    operator-webhook-secret: ${FOXCASH_NOTIFICATION_OPERATOR_WEBHOOK_SECRET:}
+    # Spec 134 (modo dreno): com a fila RabbitMQ ativa e o backlog zerado,
+    # desligar o worker do outbox DB (false) — a entrega passa a ser pelo
+    # OutboxConsumer (fila); o outbox DB segue como fonte da verdade
+    # (fail-safe). Rollback = religar (true).
+    worker-enabled: ${FOXCASH_NOTIFICATION_WORKER_ENABLED:true}
+  rabbit:
+    # Spec 134: fila dedicada RabbitMQ do outbox — OPT-IN (default desligado:
+    # o outbox segue o caminho atual, tabela + worker). Com enabled=true, o
+    # OutboxRelay publica os eventos na fila após o commit e o OutboxConsumer
+    # entrega com latência de segundos (p95 < 5s). A conexão usa
+    # spring.rabbitmq.* (host/port/creds via env FOXCASH_RABBITMQ_*).
+    enabled: ${FOXCASH_RABBIT_ENABLED:false}
+    exchange: ${FOXCASH_RABBIT_EXCHANGE:foxcash.outbox}
+    queue: ${FOXCASH_RABBIT_QUEUE:foxcash.outbox.queue}
+    dead-letter-queue: ${FOXCASH_RABBIT_DEAD_LETTER_QUEUE:foxcash.outbox.dlq}
+    routing-key: ${FOXCASH_RABBIT_ROUTING_KEY:outbox}
+    max-attempts: ${FOXCASH_RABBIT_MAX_ATTEMPTS:3}
+    # Retry/backoff do consumidor (Spec 134 T5.1): o listener falha N vezes
+    # (max-attempts) com backoff exponencial (inicial * multiplicador^n, cap no
+    # máximo) e, ao esgotar, a mensagem é rejeitada sem requeue → DLQ.
+    retry-initial-interval-ms: ${FOXCASH_RABBIT_RETRY_INITIAL_INTERVAL_MS:1000}
+    retry-multiplier: ${FOXCASH_RABBIT_RETRY_MULTIPLIER:2.0}
+    retry-max-interval-ms: ${FOXCASH_RABBIT_RETRY_MAX_INTERVAL_MS:30000}
+  billing:
+    # Inadimplencia (Spec 33): lojista com receivable OPEN/PARTIAL nao saca
+    # (409 outstanding_debt). O master continua recolhendo via saque
+    # administrativo (Spec 32).
+    block-withdrawals-on-debt: true
+  auto-withdraw:
+    # Spec 70: saque automatico por limiar de saldo. Kill-switch global (com
+    # false o job nao executa nenhum saque — operacao), cron do job (UTC,
+    # default a cada 5 min), limiar default/min da plataforma e teto de saques
+    # CRIADOS por execucao (skips nao contam).
+    enabled: ${FOXCASH_AUTO_WITHDRAW_ENABLED:true}
+    cron: ${FOXCASH_AUTO_WITHDRAW_CRON:0 */5 * * * *}
+    default-threshold: ${FOXCASH_AUTO_WITHDRAW_DEFAULT_THRESHOLD:1000.00}
+    min-threshold: ${FOXCASH_AUTO_WITHDRAW_MIN_THRESHOLD:1.00}
+    max-withdrawals-per-run: ${FOXCASH_AUTO_WITHDRAW_MAX_PER_RUN:100}
+  master-panel:
+    # Spec 97: faixas do filtro risk (baixo/medio/alto) sobre o MED% derivado
+    # ao vivo no painel de usuários. Defaults alinhados às políticas da Spec 16.
+    risk-thresholds:
+      low-percent: 2.0
+      mid-percent: 5.0
+  pvs:
+    # Spec 120: Pagamento via Saldo (PVS) — Pix Copia e Cola estático pago com o
+    # saldo do wallet (destino arbitrário). Tetos anti-abuso: diário por lojista
+    # (soma amount+fee de TODOS os PVS criados no dia — tentativa contabiliza) e
+    # por operação (valor + taxa). Avaliados na Fase A sob o lock (SEC-19).
+    daily-cap: ${FOXCASH_PVS_DAILY_CAP:5000.00}
+    max-per-payment: ${FOXCASH_PVS_MAX_PER_PAYMENT:1000.00}
+  bots:
+    # Spec 74: registro central de bots de venda (Telegram/Discord). A URL
+    # publica base compoe o webhook do Telegram (https://<host>/webhooks/telegram/
+    # {id}/{secret}); vazio (dev) = URL de dev. O job de reconciliacao valida
+    # registros presos em REGISTERING e re-verifica bots ACTIVE sem health
+    # recente. A conexao de gateway do Discord fica OFF por default (dev/test).
+    webhook-public-base-url: ${FOXCASH_BOTS_WEBHOOK_BASE_URL:}
+    reconcile-enabled: ${FOXCASH_BOTS_RECONCILE_ENABLED:true}
+    reconcile-cron: ${FOXCASH_BOTS_RECONCILE_CRON:0 */5 * * * *}
+    discord-gateway-enabled: ${FOXCASH_BOTS_DISCORD_GATEWAY_ENABLED:false}
+    # Base URL da Bot API do Telegram / Discord v10 (configuravel p/ mock de
+    # contrato no E2E — T2.5/T5.3).
+    telegram-api-base-url: ${FOXCASH_TELEGRAM_API_BASE_URL:https://api.telegram.org}
+    discord-api-base-url: ${FOXCASH_DISCORD_API_BASE_URL:https://discord.com/api/v10}
+    # Spec 79/D7: canal CDN do Telegram (upload de mídia do broadcast — envia 1×
+    # e reusa o file_id nos disparos, sem re-upload por destinatário). Vazio em
+    # dev/test (o upload exige o canal configurado).
+    telegram-cdn-channel-id: ${FOXCASH_BOTS_TELEGRAM_CDN_CHANNEL_ID:}
+    # Limiares do job de reconciliacao (minutos).
+    registering-timeout-minutes: ${FOXCASH_BOTS_REGISTERING_TIMEOUT_MINUTES:30}
+    health-timeout-minutes: ${FOXCASH_BOTS_HEALTH_TIMEOUT_MINUTES:60}
+  broadcast:
+    # Spec 79/D10: job de re-agendamento do REPOST (ShedLock + JobExecutionService).
+    # O broadcast REPOST reemite a cada interval_seconds enquanto ativo (até
+    # ser cancelado via DELETE de PENDING).
+    repost-enabled: ${FOXCASH_BROADCAST_REPOST_ENABLED:true}
+    repost-cron: ${FOXCASH_BROADCAST_REPOST_CRON:0 */5 * * * *}
+  tracking:
+    # Spec 81/D10: motor de tracking server-to-server (funil da Spec 75 → perfis
+    # → provedores de mídia via outbox da Spec 35). Base URLs configuraveis para
+    # o mock de contrato no E2E.
+    dispatch-enabled: ${FOXCASH_TRACKING_DISPATCH_ENABLED:true}
+    capi-api-version: v19.0
+    capi-base-url: ${FOXCASH_TRACKING_CAPI_BASE_URL:https://graph.facebook.com}
+    tiktok-base-url: ${FOXCASH_TRACKING_TIKTOK_BASE_URL:https://business-api.tiktok.com/open_api/v1.3}
+    utmify-base-url: ${FOXCASH_TRACKING_UTMIFY_BASE_URL:https://api.utmify.com.br}
+    otimizey-base-url: ${FOXCASH_TRACKING_OTIMIZEY_BASE_URL:https://api.otimizey.com.br}
+    event-log-response-max: 500
+  crm:
+    # Specs 83/84: chat em tempo real do CRM (SSE + fan-out Redis opcional).
+    # Heartbeat da conexao SSE e buffer curto do Last-Event-ID (eventos em
+    # memoria por lojista para reconexao).
+    sse-heartbeat-ms: 15000
+    sse-buffer-size: 50
+    chat-event-channel-prefix: "foxcash:crm:events:"
+    # Fan-out multi-instancia via Redis pub/sub. Default FALSE: dev/E2E/CI nao
+    # tem Redis (a entrega local in-memory cobre single-instance — fail-open
+    # ADR-010); producao liga com FOXCASH_CRM_REDIS_ENABLED=true.
+    redis-enabled: ${FOXCASH_CRM_REDIS_ENABLED:false}
+  psp:
+    # Provedor Pix: mock (default dev) | pagarme | asaas
+    # Em producao (application-prod.yml) NAO ha default: exige FOXCASH_PSP_PROVIDER.
+    provider: mock
+    # Spec 91 — roteamento de cobrança por adquirente (false = adapter único atual).
+    # Com true, os adquirentes são beans SEMPRE e o PixProviderRouter decide a
+    # ordem (routing.providers ou routing.policies por risco do lojista).
+    routing:
+      enabled: ${FOXCASH_PSP_ROUTING_ENABLED:false}
+      # Lista global de prioridade (ex.: "pagarme,asaas" / dev E2E: "mock,suitpay").
+      providers: ${FOXCASH_PSP_ROUTING_PROVIDERS:}
+      # Políticas por risco do lojista (D4.1 — risk_score da Spec 19). Listas
+      # DISJUNTAS por design (isolamento por nicho): default nunca envia tráfego
+      # para os adquirentes do tier alto (e vice-versa).
+      policies:
+        default:
+          providers: ${FOXCASH_PSP_ROUTING_POLICY_DEFAULT_PROVIDERS:}
+          score-min: 0
+        high-risk:
+          providers: ${FOXCASH_PSP_ROUTING_POLICY_HIGH_RISK_PROVIDERS:}
+          score-min: ${FOXCASH_PSP_ROUTING_POLICY_HIGH_RISK_SCORE_MIN:60}
+      # Circuit breaker preventivo (D5) — janela de falhas/timeouts por provedor.
+      circuit-breaker:
+        window-seconds: ${FOXCASH_PSP_CIRCUIT_BREAKER_WINDOW_SECONDS:60}
+        failure-threshold: ${FOXCASH_PSP_CIRCUIT_BREAKER_FAILURE_THRESHOLD:5}
+        cooldown-seconds: ${FOXCASH_PSP_CIRCUIT_BREAKER_COOLDOWN_SECONDS:300}
+        # Kill-switch por provedor (ex.: mock: {enabled: false}) — sem chave no yml
+        # (o default do binding é mapa vazio; a chave é aceita por env/override).
+    # Provedor de PIX de saida (Spec 36): mock (default dev) | (futuro) pagarme/asaas.
+    payout-provider: ${FOXCASH_PSP_PAYOUT_PROVIDER:mock}
+    # Spec 92 — roteamento de saque por prioridade (false = usa so o payout-provider).
+    payout-routing:
+      enabled: ${FOXCASH_PSP_PAYOUT_ROUTING_ENABLED:false}
+      # Lista de provedores de saque em ordem de prioridade (ex.: "pagarme,asaas").
+      providers: ${FOXCASH_PSP_PAYOUT_ROUTING_PROVIDERS:}
+    # Spec 92 — sweep zero-balance do saldo da conta master (excedente → conta
+    # blindada corporativa). Kill-switch + cron + buffer + destino + limiar de
+    # exposicao (alerta SWEEP_EXPOSURE_HIGH).
+    sweep:
+      enabled: ${FOXCASH_PSP_SWEEP_ENABLED:false}
+      cron: ${FOXCASH_PSP_SWEEP_CRON:0 0 6 * * *}
+      buffer-amount: ${FOXCASH_PSP_SWEEP_BUFFER_AMOUNT:0}
+      destination-key: ${FOXCASH_PSP_SWEEP_DESTINATION_KEY:}
+      exposure-alert: ${FOXCASH_PSP_SWEEP_EXPOSURE_ALERT:10000}
+    # Saldo fake da conta master (Spec 92 — sweep em dev/test).
+    mock-balance: ${FOXCASH_PSP_MOCK_BALANCE:0}
+    # Simula falha no payout mock (dev/tests — rollback sincrono / reconciliacao FAILED).
+    mock-payout-failure: ${FOXCASH_MOCK_PAYOUT_FAILURE:false}
+    # Simula timeout na cobranca mock (Spec 28, dev/tests): a PRIMEIRA tentativa
+    # por transacao falha; o retry com o mesmo transactionId passa.
+    mock-timeout: ${FOXCASH_MOCK_TIMEOUT:false}
+    webhook:
+      # Nome do header que carrega a assinatura HMAC-SHA256 do payload
+      header-name: X-Psp-Signature
+      # Spec 59: throttle do WARN de assinatura inválida — no máximo 1 log a cada
+      # intervalo (default 10s), mesmo em flood de 401 (evita spam de log).
+      log-throttle-seconds: ${FOXCASH_PSP_WEBHOOK_LOG_THROTTLE_SECONDS:10}
+      # Segredo da assinatura — SEM default (homologação 2026-08-05): sem
+      # FOXCASH_PSP_WEBHOOK_SECRET o boot falha (PspProperties fail-fast). O perfil
+      # dev fornece o valor fake; produção exige a env var.
+      secret: ${FOXCASH_PSP_WEBHOOK_SECRET}
+      # SEGURO-POR-DEFAULT (homologação 2026-08-05): o perfil base EXIGE
+      # assinatura válida; apenas o perfil dev (application-dev.yml) desliga
+      # para testes locais (E2E não assina).
+      verify-signature: true
+    payout-webhook:
+      # Webhook de saida (Spec 36): mesmo contrato do webhook do PSP.
+      header-name: X-Psp-Signature
+      secret: ${FOXCASH_PSP_PAYOUT_WEBHOOK_SECRET}
+      verify-signature: true
+    payout-reconciliation:
+      # Reconciliação de saques PROCESSING orfaos (Spec 36): cron UTC 04:30
+      # (fora da janela de pico de saques) + idade minima (horas) para reconciliar.
+      cron: "0 30 4 * * *"
+      pending-since-hours: 2
+    # PIX de saida por adquirente (Spec 38): config pronta para o adquirente real
+    # (Pagar.me/Asaas — ADR-005). O adapter concreto e spec futura; estes blocos
+    # preparam o slot e o fail-fast quando payout-provider apontar para o adquirente.
+    # Secrets fake apenas em dev; em prod vem das env vars FOXCASH_PSP_PAYOUT_*.
+    payout-pagarme:
+      secret-key: ${FOXCASH_PSP_PAYOUT_PAGARME_SECRET_KEY:dev-only-payout-pagarme-secret-key}
+      base-url: ${FOXCASH_PSP_PAYOUT_PAGARME_BASE_URL:https://api.pagar.me/core/v5}
+    payout-asaas:
+      secret-key: ${FOXCASH_PSP_PAYOUT_ASAAS_SECRET_KEY:dev-only-payout-asaas-secret-key}
+      base-url: ${FOXCASH_PSP_PAYOUT_ASAAS_BASE_URL:https://www.asaas.com/api/v3}
+    pagarme:
+      # Adapter real Pagar.me (API v5) — ativo apenas com provider=pagarme.
+      # Secret key fake para testes locais; em prod vem de FOXCASH_PSP_PAGARME_SECRET_KEY.
+      secret-key: ${FOXCASH_PSP_PAGARME_SECRET_KEY:dev-only-pagarme-secret-key}
+      base-url: ${FOXCASH_PSP_PAGARME_BASE_URL:https://api.pagar.me/core/v5}
+      # Validade da cobranca Pix em segundos
+      expires-in-seconds: 3600
+    asaas:
+      # Adapter real Asaas (API v3) — ativo apenas com provider=asaas (Spec 92:
+      # saldo master GET /finance/balance; Spec 91: adapter de cobranca Pix).
+      # Token fake para testes locais; em prod vem de FOXCASH_PSP_ASAAS_SECRET_KEY.
+      secret-key: ${FOXCASH_PSP_ASAAS_SECRET_KEY:dev-only-asaas-secret-key}
+      base-url: ${FOXCASH_PSP_ASAAS_BASE_URL:https://www.asaas.com/api/v3}

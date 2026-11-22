@@ -1,0 +1,10 @@
+# Allowlist do check-docs-consistency.sh (Spec 138) — exceções DOCUMENTADAS.
+#
+# Formato: <spec N>|<tipo>|<motivo>
+#   tipos: table | verified-code | missing-class
+#
+# Regra de ouro: NUNCA adicionar aqui por conveniência. Cada entrada precisa de
+# um motivo verificável no código. Prefira CORRIGIR a doc/status em vez de
+# allowlistar. Revisar a allowlist periodicamente (as exceções devem diminuir).
+#
+# (vazio — nenhuma exceção ativa. O check valida 100% das specs.)

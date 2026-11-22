@@ -1,0 +1,204 @@
+{
+    "root_group": {
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {},
+        "checks": {
+                "webhook PAID 204": {
+                    "passes": 120,
+                    "fails": 81,
+                    "name": "webhook PAID 204",
+                    "path": "::webhook PAID 204",
+                    "id": "3018557a5a8bc4ed3c715ab8ff261a54"
+                }
+            }
+    },
+    "metrics": {
+        "http_req_receiving": {
+            "avg": 0.06312718446601942,
+            "min": 0,
+            "med": 0,
+            "max": 23.9703,
+            "p(90)": 0,
+            "p(95)": 0
+        },
+        "charge_duration": {
+            "p(90)": 293.9601,
+            "p(95)": 302.7006,
+            "avg": 266.99896815920397,
+            "min": 220.4856,
+            "med": 276.9051,
+            "max": 599.4056
+        },
+        "http_req_failed": {
+            "passes": 81,
+            "fails": 331,
+            "thresholds": {
+                "rate<0.001": true
+            },
+            "value": 0.1966019417475728
+        },
+        "vus_max": {
+            "value": 200,
+            "min": 200,
+            "max": 200
+        },
+        "vus": {
+            "value": 5,
+            "min": 0,
+            "max": 8
+        },
+        "http_reqs": {
+            "count": 412,
+            "rate": 16.23221683326194
+        },
+        "sale_5xx": {
+            "passes": 0,
+            "fails": 0,
+            "thresholds": {
+                "rate<0.0001": false
+            },
+            "value": 0
+        },
+        "http_req_duration": {
+            "avg": 249.89286432038827,
+            "min": 199.2233,
+            "med": 235.96705,
+            "max": 1075.543,
+            "p(90)": 288.53671,
+            "p(95)": 299.365495
+        },
+        "http_req_connecting": {
+            "p(95)": 112.80931,
+            "avg": 54.92643082524272,
+            "min": 0,
+            "med": 0,
+            "max": 138.6651,
+            "p(90)": 112.22861
+        },
+        "iteration_duration": {
+            "avg": 721.8557547263683,
+            "min": 440.4906,
+            "med": 717.8545,
+            "max": 1044.4495,
+            "p(90)": 768.3891,
+            "p(95)": 801.0126
+        },
+        "http_req_duration{expected_response:true}": {
+            "avg": 260.7627900302114,
+            "min": 210.0409,
+            "med": 241.5008,
+            "max": 1075.543,
+            "p(90)": 292.5308,
+            "p(95)": 305.24815
+        },
+        "data_received": {
+            "count": 1027778,
+            "rate": 40492.99842829197
+        },
+        "http_req_tls_handshaking": {
+            "min": 0,
+            "med": 0,
+            "max": 157.6218,
+            "p(90)": 119.66336,
+            "p(95)": 121.02202,
+            "avg": 58.53883980582526
+        },
+        "sale_ok": {
+            "passes": 120,
+            "fails": 81,
+            "value": 0.5970149253731343
+        },
+        "iterations": {
+            "count": 201,
+            "rate": 7.919115493897209
+        },
+        "http_req_sending": {
+            "max": 1.5054,
+            "p(90)": 0.5126,
+            "p(95)": 0.5135,
+            "avg": 0.10147694174757278,
+            "min": 0,
+            "med": 0
+        },
+        "http_req_waiting": {
+            "min": 199.2233,
+            "med": 235.88299999999998,
+            "max": 1075.543,
+            "p(90)": 288.51534000000004,
+            "p(95)": 299.333375,
+            "avg": 249.72826019417462
+        },
+        "checks": {
+            "passes": 120,
+            "fails": 81,
+            "value": 0.5970149253731343
+        },
+        "http_req_blocked": {
+            "med": 0,
+            "max": 406.8564,
+            "p(90)": 231.96299,
+            "p(95)": 234.38270500000002,
+            "avg": 113.8537004854369,
+            "min": 0
+        },
+        "data_sent": {
+            "count": 464623,
+            "rate": 18305.488547865687
+        },
+        "webhook_duration": {
+            "max": 437.5096,
+            "p(90)": 244.3217,
+            "p(95)": 250.1873,
+            "avg": 223.51511442786057,
+            "min": 199.2233,
+            "med": 216.4678
+        }
+    },
+    "setup_data": {
+        "keyBase": "cap-1786243736372",
+        "merchants": [
+            {
+                "apiKey": "mch_8f7eb49c57eab93e4a28ad462a81f578",
+                "merchantId": "13aef646-44e1-4807-8f04-fd9cb76ffd80"
+            },
+            {
+                "apiKey": "mch_e89a86bc383b61bdc4ac6f03fbdc4410",
+                "merchantId": "bac0ca12-2d7e-4488-b57d-ce7875733f93"
+            },
+            {
+                "apiKey": "mch_df35384aa44987906b137be922a167ca",
+                "merchantId": "5c651df3-5850-41c5-b495-8fb048c83879"
+            },
+            {
+                "apiKey": "mch_ff39a38df0e91f08a371ac8669988fcd",
+                "merchantId": "a41d93c5-e659-424b-8f05-33bbedb291ee"
+            },
+            {
+                "apiKey": "mch_4e6c044437e61966b36db9c79d7c1896",
+                "merchantId": "778431b1-17a6-40e8-a8c2-6ecfae077f44"
+            },
+            {
+                "apiKey": "mch_78e5075cdb08360ec1a90d398892077e",
+                "merchantId": "d4617665-8ec3-4e5d-b7f0-dc2358073910"
+            },
+            {
+                "apiKey": "mch_69daa3d12272eb39841e52b5c5335581",
+                "merchantId": "279eec6a-b4a1-4340-8295-8079cfe004e6"
+            },
+            {
+                "apiKey": "mch_b0601f69069ef2a0f53c017f70281e03",
+                "merchantId": "556b6fbe-8154-4eff-889d-b0dce4ff8541"
+            },
+            {
+                "apiKey": "mch_238de851f94cfd48d5e76807dfa2316d",
+                "merchantId": "5876dffb-331d-40a1-aa6a-73f500014dcb"
+            },
+            {
+                "apiKey": "mch_d6cebfba2fdb1d1cf89664fcbc4e9209",
+                "merchantId": "57ee5beb-439e-4c80-8da1-d987c72e8a7b"
+            }
+        ]
+    }
+}

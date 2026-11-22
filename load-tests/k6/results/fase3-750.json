@@ -1,0 +1,51 @@
+{
+  "fase": "65 F4 — re-benchmark 750/s (pós otimização Spec 65)",
+  "data": "2026-08-09 19:10-19:20 (deploy loadgen d449aeff, rede privada foxcash.railway.internal:8080)",
+  "configuracao": {
+    "alvo": "750 vendas/s",
+    "replicas": 3,
+    "stage_por_replica": 250,
+    "pool_por_replica": 25,
+    "max_vus_por_replica": 500,
+    "duracao": "45s",
+    "rate_limit_app": "elevado (10M) — não mascara o teto real",
+    "webhook": "PAID assinado (HMAC-SHA256) com verify-signature=true"
+  },
+  "metodo": "1 venda = POST /api/v1/foxcash/pix/cob (idempotencyKey única) + POST /webhooks/pix PAID. Summary extraído do log do deployment (k6 sem --summary-export).",
+  "resultado_por_replica": [
+    {
+      "replica": "A",
+      "iterations": 11160,
+      "sale_ok": "100.00% (11160/11160)",
+      "sale_5xx": "0.00%",
+      "dropped_iterations": 91,
+      "charge_duration_p95_ms": 1008.89,
+      "charge_duration_max_ms": 3127.49
+    },
+    {
+      "replica": "B",
+      "iterations": 11165,
+      "sale_ok": "100.00% (11165/11165)",
+      "sale_5xx": "0.00%",
+      "dropped_iterations": 86,
+      "charge_duration_p95_ms": 925.50,
+      "charge_duration_max_ms": 2834.75
+    },
+    {
+      "replica": "C",
+      "iterations": 11159,
+      "sale_ok": "100.00% (11159/11159)",
+      "sale_5xx": "0.00%",
+      "dropped_iterations": 92,
+      "charge_duration_p95_ms": 1035.47,
+      "charge_duration_max_ms": 3134.78
+    }
+  ],
+  "agregado": {
+    "vendas_s": 744.1,
+    "total_iterations": 33484,
+    "dropped_total": 269
+  },
+  "conclusao": "750 vendas/s agregadas sustentadas com 0% falhas, mas o p95 do charge degrada para ~925-1035ms (vs ~119-133ms no 600/s). Ponto de inflexão de latência entre 600 e 750/s. Ainda assim: 0 duplicações, 0 5xx, integridade financeira intacta — a quebra é por latência (contensão de DB), não por falha.",
+  "gate_pos_carga": "verificado após a fase (dups/recon/wallet×ledger/deadlocks/outbox)"
+}

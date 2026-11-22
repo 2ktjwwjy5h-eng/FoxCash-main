@@ -1,0 +1,130 @@
+# Perfil de PRODUCAO — exige HTTPS/TLS e chave de criptografia obrigatoria.
+# Ativar com: SPRING_PROFILES_ACTIVE=prod
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  mail:
+    # Spec 45: envio do token de reset (SmtpResetTokenDeliverer). Sem valores o
+    # JavaMailSender auto-configurado sobe mesmo assim — a falha é logada na
+    # entrega (disponibilidade do gateway; forgot-password segue 204).
+    host: ${FOXCASH_RESET_TOKEN_SMTP_HOST:}
+    port: ${FOXCASH_RESET_TOKEN_SMTP_PORT:587}
+    username: ${FOXCASH_RESET_TOKEN_SMTP_USERNAME:}
+    password: ${FOXCASH_RESET_TOKEN_SMTP_PASSWORD:}
+
+server:
+  port: 8443
+  ssl:
+    # Keystore PKCS12 (TLS 1.3 habilitado por padrao no JDK 21).
+    # No Spring Boot 3.x, o SSL e ativado pela presenca do key-store.
+    key-store: ${FOXCASH_SSL_KEYSTORE:/etc/foxcash/keystore.p12}
+    key-store-password: ${FOXCASH_SSL_KEYSTORE_PASSWORD}
+    key-store-type: PKCS12
+    key-alias: foxcash
+  http2:
+    enabled: true
+
+foxcash:
+  crypto:
+    # Obrigatorio em producao — sem default. Falha de boot se ausente.
+    secret: ${FOXCASH_CRYPTO_SECRET}
+  console:
+    # Spec 71: Master Console (SPA em /console). Default false (API pura);
+    # ativa com FOXCASH_CONSOLE_SERVE_FRONTEND=true quando o build do console
+    # estiver presente em static/console.
+    serve-frontend: ${FOXCASH_CONSOLE_SERVE_FRONTEND:false}
+  security:
+    require-https: true
+    # Chave admin da API (Spec 12) — obrigatoria em producao (sem default,
+    # fail-fast no boot se ausente).
+    admin-api-key: ${FOXCASH_ADMIN_API_KEY}
+    # Confia em X-Forwarded-For apenas se o proxy reverso SOBRESCREVE o header
+    # (a topologia nginx TCP passthrough da documentacao NAO seta XFF —
+    # remoteAddr ja e o IP do cliente). Auditoria 2026-08-05/M10.
+    trust-proxy: ${FOXCASH_TRUST_PROXY:false}
+    # Spec 63 (Fase C): Turnstile (Cloudflare) — bot mitigation no login/cadastro.
+    # Default OFF; ativa em prod com FOXCASH_TURNSTILE_ENABLED=true + secret key por
+    # env (o secret NUNCA vai para yml). Sem secret → validação desligada.
+    turnstile:
+      enabled: ${FOXCASH_TURNSTILE_ENABLED:false}
+      site-key: ${FOXCASH_TURNSTILE_SITE_KEY:}
+      secret-key: ${FOXCASH_TURNSTILE_SECRET_KEY:}
+      timeout: ${FOXCASH_TURNSTILE_TIMEOUT:5s}
+    # Rate limiting (Spec 18/43): protege cadastro público, logins e reset de
+    # senha. Store selecionável (ADR-010): memory (default — single-instance,
+    # sem Redis) | redis (multi-instância — contador agregado via script Lua,
+    # fail-open se o Redis cair). Env: FOXCASH_RATE_LIMIT_STORE. Com store=redis,
+    # configure também SPRING_DATA_REDIS_HOST/PORT/PASSWORD.
+    rate-limit:
+      enabled: true
+      max-requests: 20
+      window-seconds: 60
+      store: ${FOXCASH_RATE_LIMIT_STORE:memory}
+  logging:
+    sanitized: true
+  notification:
+    # SSRF (auditoria 2026-08-05): em producao URLs de webhook de saida NUNCA
+    # podem apontar para endereco interno/loopback/metadata cloud.
+    allow-loopback: false
+    # Spec 45: entrega do token de reset por e-mail. Em producao o deliverer é
+    # SEMPRE smtp (deliverer=log é rejeitado no boot — fail-fast de segurança:
+    # o token de reset é credencial de conta e nunca vai para logs). Credenciais
+    # SMTP ausentes NÃO derrubam o boot — a falha é logada na entrega e o
+    # forgot-password segue 204 (disponibilidade do gateway).
+    reset-token:
+      deliverer: ${FOXCASH_RESET_TOKEN_DELIVERER:smtp}
+      # URL pública do frontend do portal (link de redefinição no e-mail). Sem
+      # valor o boot NÃO falha — a entrega loga erro (disponibilidade primeiro).
+      base-url: ${FOXCASH_PORTAL_BASE_URL:}
+      email:
+        host: ${FOXCASH_RESET_TOKEN_SMTP_HOST:}
+        port: ${FOXCASH_RESET_TOKEN_SMTP_PORT:587}
+        username: ${FOXCASH_RESET_TOKEN_SMTP_USERNAME:}
+        password: ${FOXCASH_RESET_TOKEN_SMTP_PASSWORD:}
+        from: ${FOXCASH_RESET_TOKEN_SMTP_FROM:}
+  master:
+    # Seed do primeiro master (Spec 13): sem default. Sem FOXCASH_MASTER_SEED_*
+    # o boot NAO falha — o master inicial simplesmente nao e criado
+    # (MasterSeedRunner apenas documenta em log).
+    seed-username: ${FOXCASH_MASTER_SEED_USERNAME:}
+    seed-password: ${FOXCASH_MASTER_SEED_PASSWORD:}
+    session-ttl-seconds: 28800
+  auth:
+    # Recuperação de senha (Spec 40): em produção o token de recuperação NUNCA
+    # é devolvido na resposta (anti-enumeração — forgot-password responde sempre
+    # 204). A entrega do token fica para integração futura (e-mail/webhook).
+    reset-token-ttl-seconds: 1800
+    expose-reset-token: false
+  psp:
+    # Provedor Pix em producao: obrigatorio (mock nunca em prod de verdade).
+    # Valores aceitos: mock | pagarme | asaas — sem adapter concreto para
+    # pagarme/asaas o boot falha (bean PixProviderClient ausente).
+    provider: ${FOXCASH_PSP_PROVIDER}
+    # PIX de saida (Spec 36/38): obrigatorio em producao — SEM default (mock nunca
+    # em prod por acidente; boot falha se ausente). Valores: mock | pagarme | asaas.
+    # Provider desconhecido sem adapter -> boot falha (bean PayoutProviderClient ausente).
+    payout-provider: ${FOXCASH_PSP_PAYOUT_PROVIDER}
+    # PIX de saida por adquirente (Spec 38): secret-key obrigatoria (sem default,
+    # fail-fast no boot) quando payout-provider apontar para o adquirente.
+    payout-pagarme:
+      secret-key: ${FOXCASH_PSP_PAYOUT_PAGARME_SECRET_KEY}
+      base-url: ${FOXCASH_PSP_PAYOUT_PAGARME_BASE_URL:https://api.pagar.me/core/v5}
+    payout-asaas:
+      secret-key: ${FOXCASH_PSP_PAYOUT_ASAAS_SECRET_KEY}
+      base-url: ${FOXCASH_PSP_PAYOUT_ASAAS_BASE_URL:https://www.asaas.com/api/v3}
+    webhook:
+      # Segredo de assinatura obrigatorio (sem default — fail-fast no boot).
+      secret: ${FOXCASH_PSP_WEBHOOK_SECRET}
+      # Em producao a verificacao de assinatura e SEMPRE ligada.
+      verify-signature: true
+    payout-webhook:
+      # Webhook de saida (Spec 36): segredo obrigatorio (sem default — fail-fast).
+      secret: ${FOXCASH_PSP_PAYOUT_WEBHOOK_SECRET}
+      verify-signature: true
+    pagarme:
+      # Obrigatorio apenas quando FOXCASH_PSP_PROVIDER=pagarme (fail-fast no boot).
+      secret-key: ${FOXCASH_PSP_PAGARME_SECRET_KEY}
+      base-url: ${FOXCASH_PSP_PAGARME_BASE_URL:https://api.pagar.me/core/v5}
+      expires-in-seconds: 3600

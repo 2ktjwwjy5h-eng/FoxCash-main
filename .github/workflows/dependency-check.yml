@@ -1,0 +1,56 @@
+# OWASP Dependency-Check — varredura de CVEs nas dependências (Specs 18/130)
+# Agendado semanalmente (segunda 07:00) + gatilho manual. Bloqueante: falha em
+# CVE >= 7.0 (failBuildOnCVSS=7 configurado no pom — Spec 130).
+name: dependency-check
+
+on:
+  schedule:
+    - cron: "0 7 * * 1" # segunda-feira 07:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  owasp:
+    name: OWASP Dependency-Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      # Cache da base NVD (Spec 130): sem isso cada run rebaixa a NVD inteira
+      # (a API da NVD é rate-limited; o OWASP persiste a base localmente). O
+      # cache preserva entre runs e acelera o check de minutos para segundos.
+      - name: Cache da base NVD (dependency-check-data)
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/owasp/dependency-check-data
+          key: nvd-data-${{ runner.os }}-${{ hashFiles('pom.xml') }}
+          restore-keys: |
+            nvd-data-${{ runner.os }}-
+
+      # Guard (Spec 130): sem a NVD_API_KEY o check falha com "Invalid API Key,
+      # length of 0" (UpdateException críptica do OWASP). Falha rápido com a
+      # mensagem de ação em vez do stack trace. A chave é gratuita e obrigatória
+      # desde 2024 (a NVD rate-limita o feed sem chave).
+      - name: Guard — NVD_API_KEY obrigatório (secret do GitHub)
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: |
+          if [ -z "$NVD_API_KEY" ]; then
+            echo "::error::Secret NVD_API_KEY nao configurado no repositorio. Crie-o em Settings → Secrets and variables → Actions (chave gratuita em https://nvd.nist.gov/developers/request-an-api-key) e rode o workflow de novo."
+            exit 1
+          fi
+
+      - name: Run dependency-check (bloqueante — CVE >= 7.0 falha o build)
+        env:
+          # Chave da NVD (obrigatória desde 2024). Secret do GitHub — nunca
+          # hardcoded (Spec 130). Sem a key o check falha com "Invalid API Key".
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        # Goal via plugin declarado no pom (dependency-check-maven 13.0.0 —
+        # Spec 130). failBuildOnCVSS=7 vem da config do plugin no pom.
+        run: mvn -B dependency-check:check

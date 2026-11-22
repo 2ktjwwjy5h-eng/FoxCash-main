@@ -1,0 +1,482 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.5.16</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.foxcash</groupId>
+    <artifactId>foxcash-backend</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <name>foxcash-backend</name>
+    <description>Plataforma white-label de pagamentos Pix - backend em arquitetura hexagonal</description>
+
+    <properties>
+        <java.version>21</java.version>
+        <!-- Spec 132: o BOM do Spring Boot 3.5.16 fixa flyway.version=11.7.2,
+             que declara suporte testado APENAS até PostgreSQL 17 (bytecode:
+             recommendFlywayUpgradeIfNecessaryForMajorVersion("17")) — com o
+             Postgres 18.4 do Railway o warning "Flyway upgrade recommended"
+             continuaria. Flyway 12.0.0+ eleva o limite para 18; usamos a
+             última estável da linha 12 (12.11.0), com API 55/55 métodos
+             compatível com o FlywayAutoConfiguration do Boot 3.5.16
+             (verificado no jar) e artefatos core/database-postgresql/maven-plugin
+             presentes no Maven Central. -->
+        <flyway.version>12.11.0</flyway.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <!-- Redis (Spec 43 — M-05): store distribuído do rate limit quando
+             foxcash.security.rate-limit.store=redis (multi-instância). O default
+             é memory — a dependência existe no classpath, mas NENHUM bean de
+             conexão é usado e o Redis não é contactado em single-instance. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
+        <!-- RabbitMQ (Spec 134 — fila dedicada do outbox em tempo real). O
+             starter traz o client AMQP; os beans de conexão/filas só existem
+             quando foxcash.rabbit.enabled=true (RabbitConfig condicional) —
+             sem broker configurado o classpath fica inerte (mesmo padrão Redis). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+
+        <!-- Flyway: migrações de schema -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+
+        <!-- ShedLock: lock distribuido para jobs agendados -->
+        <dependency>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-spring</artifactId>
+            <version>5.16.0</version>
+        </dependency>
+        <dependency>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-provider-jdbc-template</artifactId>
+            <version>5.16.0</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Observabilidade (2026-08-07): actuator (health/info/metrics) +
+             métricas Prometheus (scrape em /actuator/prometheus). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- Tracing distribuído (Spec 57, 2026-08-07): Micrometer Tracing com
+             bridge OpenTelemetry + exporter OTLP (HTTP) — spans HTTP/JDBC com
+             traceId/spanId nos logs; fail-open sem collector (FOXCASH_OTLP_ENDPOINT). -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing-bridge-otel</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-exporter-otlp</artifactId>
+        </dependency>
+        <!-- Log drain direto (Spec 95, 2026-08-15): logstash-logback-encoder gera
+             JSON estruturado (ts/level/logger/message + MDC requestId/traceId/
+             spanId) e o LogstashHttpAppender POSTa para o Axiom (ingest API).
+             Versão fixada: NÃO é gerenciada pelo BOM do Spring Boot 3.3.5.
+             8.0 requer Logback >= 1.5.7 (SB 3.3.5 usa 1.5.x). Ativo apenas no
+             profile prod via logback-spring.xml; token vem da env AXIOM_API_TOKEN
+             (Railway variable — nunca no repo). -->
+        <dependency>
+            <groupId>net.logstash.logback</groupId>
+            <artifactId>logstash-logback-encoder</artifactId>
+            <version>8.0</version>
+        </dependency>
+        <!-- SEC-21 (revisão de segurança 2026-08-11): Apache HttpClient 5 com
+             DnsResolver PINADO na entrega de webhooks de saída — o java.net.http
+             (e o HttpURLConnection) re-resolvem o DNS na conexão, criando uma
+             janela TOCTOU (DNS rebinding) entre a validação SSRF e o connect.
+             O DnsResolver valida os MESMOS endereços usados na conexão e o
+             cliente preserva hostname no Host header/SNI. Versão gerenciada pelo
+             BOM do Spring Boot (org.apache.httpcomponents.client5). -->
+        <dependency>
+            <groupId>org.apache.httpcomponents.client5</groupId>
+            <artifactId>httpclient5</artifactId>
+        </dependency>
+        <!-- MockWebServer: testes do adapter HTTP do PSP (contrato da API v5) -->
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>mockwebserver</artifactId>
+            <version>4.12.0</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Spec 137 (testes de integração reais): Testcontainers sobe Postgres +
+             Redis reais em Docker para os fluxos críticos (@SpringBootTest +
+             Testcontainers). Versão gerenciada pelo BOM do Spring Boot 3.5.16
+             (Spec 130). Sem Docker no runner → fallback para Postgres nativo
+             (padrão da Spec 68) e os testes de Redis são pulados (assumption). -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Spec 134 (T5.1): RabbitMQ real via Testcontainers (módulo oficial —
+             versão gerenciada pelo BOM do Spring Boot 3.5.16). -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>rabbitmq</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Redis: NÃO existe módulo `org.testcontainers:redis` no Maven Central —
+             os testes usam `GenericContainer("redis:7-alpine")` do core
+             (transitivo do postgresql/junit-jupiter). -->
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <!-- PITest (mutation testing) — invocado explicitamente:
+                 mvn test-compile org.pitest:pitest-maven:mutationCoverage
+                 Relatório em target/pit-reports/. Escopo padrão = domínio +
+                 aplicação (regras de negócio puras, testes rápidos). Para
+                 expandir, sobrescreva -DtargetClasses/-DtargetTests. -->
+            <plugin>
+                <groupId>org.pitest</groupId>
+                <artifactId>pitest-maven</artifactId>
+                <version>1.17.2</version>
+                <configuration>
+                    <targetClasses>
+                        <param>com.foxcash.domain.*</param>
+                        <param>com.foxcash.application.*</param>
+                        <!-- infrastructure: apenas classes com teste unitário dedicado
+                             (lógica pura/adapters — SecurityConfig, DTOs, JPA e
+                             mappers ficam fora: mutantes NO_COVERAGE sem valor) -->
+                        <param>com.foxcash.infrastructure.security.ApiKeyAuthFilter</param>
+                        <param>com.foxcash.infrastructure.security.ApiKeyGeneratorImpl</param>
+                        <param>com.foxcash.infrastructure.security.BCryptPasswordHasher</param>
+                        <param>com.foxcash.infrastructure.security.ClientIpResolver</param>
+                        <param>com.foxcash.infrastructure.security.CryptoConverter</param>
+                        <param>com.foxcash.infrastructure.security.CryptoProperties</param>
+                        <param>com.foxcash.infrastructure.security.DocumentHasher</param>
+                        <param>com.foxcash.infrastructure.security.InMemoryRateLimitStore</param>
+                        <param>com.foxcash.infrastructure.security.MasterAuthFilter</param>
+                        <param>com.foxcash.infrastructure.security.MasterPasswordGeneratorImpl</param>
+                        <param>com.foxcash.infrastructure.security.MerchantAccessGuard</param>
+                        <param>com.foxcash.infrastructure.security.MerchantPortalAuthFilter</param>
+                        <param>com.foxcash.infrastructure.security.RateLimitFilter</param>
+                        <param>com.foxcash.infrastructure.security.RedisRateLimitStore</param>
+                        <param>com.foxcash.infrastructure.security.RequestBodySizeFilter</param>
+                        <param>com.foxcash.infrastructure.security.RequestIdFilter</param>
+                        <param>com.foxcash.infrastructure.security.ResetTokenGeneratorImpl</param>
+                        <param>com.foxcash.infrastructure.security.SensitiveDataLoggingFilter</param>
+                        <param>com.foxcash.infrastructure.security.SessionTokenGeneratorImpl</param>
+                        <param>com.foxcash.infrastructure.security.Sha256Hasher</param>
+                        <param>com.foxcash.infrastructure.security.WebhookSignatureFilter</param>
+                        <param>com.foxcash.infrastructure.security.WebhookUrlValidator</param>
+                        <param>com.foxcash.infrastructure.outbound.pix.*</param>
+                        <param>com.foxcash.infrastructure.notification.HttpMerchantNotifier</param>
+                        <param>com.foxcash.infrastructure.notification.SmtpResetTokenDeliverer</param>
+                        <param>com.foxcash.infrastructure.inbound.rest.GlobalExceptionHandler</param>
+                        <param>com.foxcash.infrastructure.inbound.rest.handler.*</param>
+                        <param>com.foxcash.infrastructure.inbound.rest.QueryParamParser</param>
+                        <param>com.foxcash.infrastructure.inbound.rest.WithdrawalDestinationMasker</param>
+                        <param>com.foxcash.infrastructure.config.PspProperties</param>
+                        <param>com.foxcash.infrastructure.config.NotificationProperties</param>
+                    </targetClasses>
+                    <targetTests>
+                        <param>com.foxcash.domain.*</param>
+                        <param>com.foxcash.application.*</param>
+                        <param>com.foxcash.infrastructure.security.*</param>
+                        <param>com.foxcash.infrastructure.outbound.pix.*</param>
+                        <param>com.foxcash.infrastructure.notification.HttpMerchantNotifierTest</param>
+                        <param>com.foxcash.infrastructure.notification.SmtpResetTokenDelivererTest</param>
+                        <param>com.foxcash.infrastructure.inbound.rest.GlobalExceptionHandlerTest</param>
+                        <param>com.foxcash.infrastructure.inbound.rest.handler.*</param>
+                        <param>com.foxcash.infrastructure.inbound.rest.QueryParamParserTest</param>
+                        <param>com.foxcash.infrastructure.inbound.rest.WithdrawalDestinationMaskerTest</param>
+                        <param>com.foxcash.infrastructure.config.PspPropertiesTest</param>
+                        <param>com.foxcash.infrastructure.config.NotificationPropertiesTest</param>
+                    </targetTests>
+                    <outputFormats>
+                        <outputFormat>HTML</outputFormat>
+                        <outputFormat>XML</outputFormat>
+                    </outputFormats>
+                    <timestampedReports>false</timestampedReports>
+                    <verbose>false</verbose>
+                </configuration>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.pitest</groupId>
+                        <artifactId>pitest-junit5-plugin</artifactId>
+                        <version>1.2.1</version>
+                    </dependency>
+                </dependencies>
+            </plugin>
+            <!-- JaCoCo (cobertura de linha/ramo) — prepara o agent no `test` e
+                 verifica as metas no `verify`:
+                 mvn test            → gera target/site/jacoco/index.html
+                 mvn verify          → gera + VALIDA as metas (falha se abaixo)
+                 Metas alinhadas à campanha de mutation testing (95% killed;
+                 estado atual (verify local 2026-08-17): INSTRUCTION 89.1%,
+                 LINE 90.2%, BRANCH 74.0%, METHOD 91.4% no escopo incluído):
+                 - INSTRUCTION/LINE ≥ 85%
+                 - BRANCH ≥ 70% (gate 80% era inatingível — nível atual 74.0%
+                   pós-especs 91/98; 70% mantém o verify verde com buffer)
+                 - CLASS ≥ 90%
+                 Cobertura medida no código de negócio (domínio + aplicação +
+                 infra de lógica pura). Thin adapters SEM teste unitário são
+                 excluídos — mesmo critério do PIT: controllers REST, scheduler,
+                 seed, config, persistence (JPA/entities/mappers) e DTOs
+                 (testados via E2E/contrato ou sem regra de negócio). -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.15</version>
+                <configuration>
+                    <excludes>
+                        <!-- ====================================================
+                             POR QUE ESTAS CLASSES SÃO EXCLUÍDAS DA COBERTURA
+                             (mesmo critério do PIT — mutation testing):
+                             ====================================================
+                             Grupo excluído                  Motivo
+                             ====================================================
+                             Classe principal                Inicialização do Spring (bootstrap);
+                                                             sem regra de negócio.
+                             Controllers REST                Thin adapters: lógica concentrada nos
+                                                             services (cobertos); o roteamento HTTP
+                                                             é validado por testes de integração/E2E.
+                             DTOs                            Sem lógica de negócio — transporte de
+                                                             dados entre camadas (mapeamento testado
+                                                             nos mappers/controllers).
+                             Scheduler (jobs)                Agendamento (ShedLock) — execução
+                                                             one-shot/periódica sem regra de negócio;
+                                                             lógica delegada aos services.
+                             Seed (bootstrap de dados)       Carga inicial de referência; sem regra
+                                                             de negócio (one-shot de ambiente).
+                             Configuração                    Bootstrap do contexto Spring (beans,
+                                                             properties); sem regra de negócio.
+                             Persistence (JPA/entities/     Estado persistido (entities) e mapeamento
+                             mappers)                        ORM — cobertos indiretamente pelos
+                                                             repositórios; sem regra de negócio.
+                             ====================================================
+                             Se uma classe destes grupos ganhar regra de negócio,
+                             REMOVA a exclusão e adicione teste unitário — não a
+                             deixe fora por conveniência. -->
+                        <exclude>com/foxcash/FoxCashApplication.class</exclude>
+                        <exclude>com/foxcash/infrastructure/inbound/rest/*Controller.class</exclude>
+                        <exclude>com/foxcash/infrastructure/inbound/rest/dto/**/*.class</exclude>
+                        <exclude>com/foxcash/infrastructure/scheduler/**/*.class</exclude>
+                        <exclude>com/foxcash/infrastructure/seed/**/*.class</exclude>
+                        <exclude>com/foxcash/infrastructure/config/**/*.class</exclude>
+                        <exclude>com/foxcash/infrastructure/outbound/persistence/**/*.class</exclude>
+                    </excludes>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>INSTRUCTION</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.85</minimum>
+                                        </limit>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.85</minimum>
+                                        </limit>
+                                        <limit>
+                                            <counter>BRANCH</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.70</minimum>
+                                        </limit>
+                                        <limit>
+                                            <counter>CLASS</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.90</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Flyway Maven (migrações de schema) — usado no CI para validar o
+                 banco sem subir a aplicação:
+                   mvn flyway:validate -Dflyway.url=... -Dflyway.user=... \
+                       -Dflyway.password=...
+                   → falha se algum checksum de migration aplicada foi alterado
+                   (arquivo editado após aplicação) — o CI injeta as credenciais
+                   via -D (env DB_URL/DB_USERNAME/DB_PASSWORD, as mesmas da app).
+                 O goal também confere o banco contra o classpath: migration
+                 faltando/renumerada/deletada → erro de validação. -->
+            <plugin>
+                <groupId>org.flywaydb</groupId>
+                <artifactId>flyway-maven-plugin</artifactId>
+                <!-- Versão gerenciada pelo BOM do Boot 3.5.16 (11.7.2), mas
+                     override `flyway.version`=12.11.0 (Spec 132) eleva o
+                     suporte a PostgreSQL 18 (o 11.7.2 só testa até 17). -->
+                <configuration>
+                    <!-- filesystem: o goal `mvn flyway:*` roda SEM a fase de
+                         resources (target/classes/db/migration nao existe) —
+                         apontar direto para as migrations do src. Bug do CI
+                         corrigido em 2026-08-07 ("No migration with a target
+                         version N could be found"). -->
+                    <locations>
+                        <location>filesystem:src/main/resources/db/migration</location>
+                    </locations>
+                </configuration>
+            </plugin>
+            <!-- Spec 68: testes de contexto — o grupo @Tag("context") (smoke
+                 @SpringBootTest que exige Postgres) fica FORA do `mvn test`/
+                 `verify` default (o job test do CI não tem banco). Roda com
+                 `mvn test -Pcontext-tests` (local com Postgres e no CI). As
+                 camadas 1–3 (parse do YAML, conditionals, binding) NÃO usam o
+                 tag e rodam em todo `mvn test`. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <excludedGroups>context,integration</excludedGroups>
+                </configuration>
+            </plugin>
+            <!-- Spec 130 (upgrade + OWASP bloqueante): varredura de CVEs nas
+                 dependências — goal `check` falha o build em CVE >= 7.0
+                 (failBuildOnCVSS). A chave NVD vem da env NVD_API_KEY (secret
+                 do GitHub no workflow dependency-check.yml) — nunca hardcoded.
+                 Invocado explicitamente (`mvn dependency-check:check`), NÃO
+                 roda a cada build (baixa a base NVD — lento). -->
+            <plugin>
+                <groupId>org.owasp</groupId>
+                <artifactId>dependency-check-maven</artifactId>
+                <version>13.0.0</version>
+                <configuration>
+                    <failBuildOnCVSS>7</failBuildOnCVSS>
+                    <format>HTML,JSON,JUNIT</format>
+                    <nvdApiKey>${env.NVD_API_KEY}</nvdApiKey>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+    <profiles>
+        <!-- Spec 68 (F4): roda APENAS o grupo de contexto (smoke @SpringBootTest
+             com Postgres). `mvn test -Pcontext-tests` — usado no CI (job test
+             com Postgres) e localmente (Postgres nativo, Spec 1). -->
+        <profile>
+            <id>context-tests</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <!-- combine.self="override": SUBSTITUI o <configuration> do
+                             build (que exclui o grupo context por default) em vez
+                             de mesclar — sem isso o Maven mantém
+                             excludedGroups=context e o grupo roda 0 testes. -->
+                        <configuration combine.self="override">
+                            <groups>context</groups>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!-- Spec 137 (C4): roda APENAS a camada de integração (@Tag("integration") —
+             @SpringBootTest + Testcontainers). `mvn test -Pintegration-tests` —
+             usado no CI (job `integration` com Docker no runner, ubuntu-latest)
+             e localmente (com Docker → Testcontainers; sem Docker → Postgres
+             nativo + Redis pulado por assumption). -->
+        <profile>
+            <id>integration-tests</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <!-- combine.self="override": SUBSTITUI o <configuration> do
+                             build (que exclui o grupo integration por default) em vez
+                             de mesclar — sem isso o Maven mantém
+                             excludedGroups=context,integration e o grupo roda 0 testes. -->
+                        <configuration combine.self="override">
+                            <groups>integration</groups>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

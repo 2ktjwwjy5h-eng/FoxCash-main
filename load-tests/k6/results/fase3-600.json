@@ -1,0 +1,53 @@
+{
+  "fase": "65 F4 — re-benchmark 600/s (pós otimização Spec 65)",
+  "data": "2026-08-09 18:54 (deploy loadgen 98c72a6a, rede privada foxcash.railway.internal:8080)",
+  "configuracao": {
+    "alvo": "600 vendas/s",
+    "replicas": 2,
+    "stage_por_replica": 300,
+    "pool_por_replica": 30,
+    "max_vus_por_replica": 600,
+    "duracao": "45s",
+    "rate_limit_app": "elevado (10M) — não mascara o teto real",
+    "webhook": "PAID assinado (HMAC-SHA256) com verify-signature=true"
+  },
+  "metodo": "1 venda = POST /api/v1/foxcash/pix/cob (idempotencyKey única) + POST /webhooks/pix PAID. Summary extraído do log do deployment (k6 sem --summary-export; evidência bruta no log do deploy).",
+  "resultado_por_replica": [
+    {
+      "replica": "A",
+      "iterations": 13501,
+      "iterations_s": 282.15,
+      "http_reqs": 27032,
+      "http_reqs_s": 564.93,
+      "sale_ok": "100.00% (13501/13501)",
+      "sale_5xx": "0.00% (0)",
+      "http_req_failed": "0.00%",
+      "checks": "100.00% 13501/13501",
+      "charge_duration_p95_ms": 133.26,
+      "charge_duration_avg_ms": 56.20,
+      "charge_duration_max_ms": 660.76
+    },
+    {
+      "replica": "B",
+      "iterations": 13500,
+      "iterations_s": 255.94,
+      "http_reqs": 27030,
+      "http_reqs_s": 512.45,
+      "sale_ok": "100.00% (13500/13500)",
+      "sale_5xx": "0.00% (0)",
+      "http_req_failed": "0.00%",
+      "checks": "100.00% 13500/13500",
+      "charge_duration_p95_ms": 118.79,
+      "charge_duration_avg_ms": 50.39,
+      "charge_duration_max_ms": 719.65
+    }
+  ],
+  "conclusao": "600 vendas/s sustentadas com 0% falhas e p95 do charge ~119-133ms — comparação com o baseline pré-otimização (Fase 2B 2026-08-09: 600/s de chegada degradava p95 ~5,5s com o teto real ~470-480/s) comprova a otimização da Spec 65 (auth consolidado + outbox com lotes).",
+  "gate_pos_carga": {
+    "dups_idempotency": 0,
+    "reconciliation_issues_open": 0,
+    "wallet_vs_ledger": 0,
+    "deadlocks": 0,
+    "outbox": "0 PENDING / 399337 SENT / 0 FAILED (drenado)"
+  }
+}

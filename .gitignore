@@ -1,0 +1,54 @@
+target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Ambiente local (segredos)
+.env
+.env.local
+
+# Estado/runtime do DsCode (nao versionar)
+.dscode/
+
+# Backups automaticos do editor (ex.: *.bak.2026-08-03T21-05-34)
+*.bak.*
+
+# Testes E2E (node_modules)
+e2e-tests/node_modules/
+e2e-tests/test-results/
+e2e-tests/playwright-report/
+# Diagnóstico temporário com credenciais do banco em texto claro — NÃO versionar
+e2e-tests/pg-test.cjs
+
+# Portal SPA (frontend)
+portal/node_modules/
+portal/tsconfig.tsbuildinfo
+
+# Master Console SPA (frontend — Spec 71)
+console/node_modules/
+console/tsconfig.tsbuildinfo
+
+# Python (load-tests)
+__pycache__/
+*.pyc
+
+# Estado/runtime do script dev-foxcashpay.sh (pids + logs)
+.dev-foxcashpay/
+
+# Diretório temporário do monitor de body-inspection (fallback de TMPDIR no Windows)
+.tmp/

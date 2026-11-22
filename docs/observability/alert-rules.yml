@@ -1,0 +1,183 @@
+# Alertas proativos — regras PromQL (Spec 126)
+
+> Regras no formato Grafana Managed Alert (multi-tenant) — o mesmo modelo serve
+> de referência para regras do hosted Prometheus. Ajuste os thresholds ao
+> baseline de produção antes de ativar.
+
+## Como usar
+
+1. No Grafana Cloud: *Alerting → Contact points* (canal: Slack/e-mail/PagerDuty)
+   e *Notification policies*.
+2. *Alerting → Alert rules → New rule → Grafana managed alert*: cole cada regra.
+3. `folder`: `foxcash-operacao`; `evaluation group`: `5m` (cada regra avalia a
+   cada 5 min com `for` de resolução).
+4. Confirme o datasource Prometheus nos `expr`.
+
+---
+
+## Financeiro (prioridade crítica)
+
+### ReconciliationDivergence — divergência de saldo aberta
+```yaml
+- alert: ReconciliationDivergence
+  expr: foxcash_reconciliation_open_issues > 0
+  for: 10m
+  labels: { severity: critical, runbook: docs/observability/runbook.md#reconciliationdivergence }
+  annotations:
+    summary: "Divergência de saldo em aberto (wallet x ledger, Spec 30)"
+    description: "{{ $value }} issue(s) OPEN na reconciliação. Saldo de lojista pode estar errado."
+```
+
+### WebhookAmountDivergence — valor divergente no webhook PAID (B-05)
+```yaml
+- alert: WebhookAmountDivergence
+  expr: increase(foxcash_webhook_amount_divergence_total[15m]) > 0
+  for: 5m
+  labels: { severity: critical, runbook: docs/observability/runbook.md#webhookamountdivergence }
+  annotations:
+    summary: "Webhook PAID com valor divergente do registro"
+    description: "O PSP informou valor diferente do cobrado. A transação NÃO foi aprovada (issue de reconciliação criada)."
+```
+
+### OutboxStalled — entrega de eventos parada (webhook do lojista não sai)
+```yaml
+- alert: OutboxStalled
+  expr: foxcash_outbox_backlog_age_seconds > 300
+  for: 5m
+  labels: { severity: critical, runbook: docs/observability/runbook.md#outboxstalled }
+  annotations:
+    summary: "Outbox parado há mais de 5 min"
+    description: "PENDING mais antigo com {{ $value }}s de idade. Eventos (SALE_PAID/webhooks) não estão saindo."
+```
+
+### OutboxFailureRate — taxa de falha de entrega alta
+```yaml
+- alert: OutboxFailureRate
+  expr: (sum(rate(foxcash_outbox_failed_total[15m])) / (sum(rate(foxcash_outbox_delivered_total[15m])) + sum(rate(foxcash_outbox_failed_total[15m])))) > 0.2
+  for: 15m
+  labels: { severity: warning, runbook: docs/observability/runbook.md#outboxstalled }
+  annotations:
+    summary: "Taxa de falha do outbox > 20% (15 min)"
+    description: "Eventos esgotando tentativas / rejeitados pelo receptor (webhook do lojista caindo)."
+```
+
+### OutboxQueueDlq — mensagem morreu na fila RabbitMQ (Spec 134)
+```yaml
+- alert: OutboxQueueDlq
+  expr: increase(foxcash_outbox_dlq_total[15m]) > 0
+  for: 5m
+  labels: { severity: critical, runbook: docs/observability/runbook.md#outboxqueuedlq }
+  annotations:
+    summary: "Evento caiu na DLQ do RabbitMQ (Spec 134)"
+    description: "{{ $value }} mensagem(ns) rejeitada(s) após esgotar os retries (max-attempts). O evento NÃO foi entregue — replay via management API (runbook)."
+```
+
+### OutboxQueueStalled — fila parada (relay publicou, consumer não consumiu)
+```yaml
+- alert: OutboxQueueStalled
+  expr: increase(foxcash_outbox_published_total[15m]) - increase(foxcash_outbox_consumed_total[15m]) > 0
+  for: 15m
+  labels: { severity: warning, runbook: docs/observability/runbook.md#outboxqueuestalled }
+  annotations:
+    summary: "Fila RabbitMQ parada (publicados ≠ consumidos)"
+    description: "{{ $value }} evento(s) publicados sem consumir em 15 min. Consumer/broker com problema — ou o worker DB (modo dreno) está entregando (backlog age caindo)."
+```
+
+---
+
+## Adquirente / roteamento
+
+### PspFallbackSpike — adquirente caindo (fallback disparando)
+```yaml
+- alert: PspFallbackSpike
+  expr: increase(foxcash_psp_route_total{outcome="fallback"}[15m]) > 10
+  for: 5m
+  labels: { severity: critical, runbook: docs/observability/runbook.md#pspfallbackspike }
+  annotations:
+    summary: "Burst de fallback de provedor Pix (15 min)"
+    description: "{{ $value }} falha(s) de rota com fallback. O adquirente primário pode estar fora — ver trace (Spec 125) e health do provider."
+```
+
+### PspSkippedSpike — circuito aberto (provedor pulado)
+```yaml
+- alert: PspSkippedSpike
+  expr: increase(foxcash_psp_route_total{outcome="skipped"}[15m]) > 20
+  for: 5m
+  labels: { severity: warning, runbook: docs/observability/runbook.md#pspfallbackspike }
+  annotations:
+    summary: "Provedor sendo pulado (circuito aberto/kill-switch)"
+    description: "Circuit breaker preventivo (D5) abrindo: provedor com falhas acumuladas."
+```
+
+---
+
+## Aplicação / infra
+
+### JobFailed — job agendado falhou
+```yaml
+- alert: JobFailed
+  expr: increase(foxcash_job_failure_total[15m]) > 0
+  for: 5m
+  labels: { severity: warning, runbook: docs/observability/runbook.md#jobfailed }
+  annotations:
+    summary: "Job falhou: {{ $labels.job }}"
+    description: "O job {{ $labels.job }} falhou na última janela. Ver job_runs (Spec 53) e o log no Axiom (Spec 95)."
+```
+
+### Http5xxSpike — erro 5xx subindo (por rota)
+```yaml
+- alert: Http5xxSpike
+  expr: rate(foxcash_http_5xx_total[15m]) > 0.5
+  for: 5m
+  labels: { severity: warning, runbook: docs/observability/runbook.md#http5xxspike }
+  annotations:
+    summary: "5xx subindo: rota {{ $labels.route }}"
+    description: "Taxa de 5xx > 0.5/min em {{ $labels.route }}. Ver trace (Spec 125) e logs no Axiom."
+```
+
+### Http429Spike — abuso (rate limit batendo)
+```yaml
+- alert: Http429Spike
+  expr: rate(foxcash_http_429_total[5m]) > 20
+  for: 5m
+  labels: { severity: warning, runbook: docs/observability/runbook.md#http429spike }
+  annotations:
+    summary: "Rajada de 429: grupo {{ $labels.group }}"
+    description: "Rate limit excedido em {{ $labels.group }} (IP ou principal autenticado). Possível ataque/abuso — ver alerta de segurança (Spec 64)."
+```
+
+### HikariPoolExhaustion — pool de conexões perto do teto
+```yaml
+- alert: HikariPoolExhaustion
+  expr: (hikaricp_connections_active / hikaricp_connections_max) > 0.9
+  for: 5m
+  labels: { severity: warning, runbook: docs/observability/runbook.md#hikaripool }
+  annotations:
+    summary: "Pool Hikari > 90% ativo"
+    description: "{{ $value | humanizePercentage }} do pool em uso. Rota de lentidão/timeout; ver queries lentas e connections leak."
+```
+
+### HeapHigh — heap JVM perto do teto
+```yaml
+- alert: HeapHigh
+  expr: (jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"}) > 0.9
+  for: 10m
+  labels: { severity: warning, runbook: docs/observability/runbook.md#heaphigh }
+  annotations:
+    summary: "Heap JVM > 90%"
+    description: "Risco de OOM/GC thrash. Ver heap dump e uso por componente."
+```
+
+---
+
+## Observações
+
+- **Outbox parado vs. fila vazia**: `foxcash_outbox_backlog_age_seconds = 0` quando
+  não há PENDING — a regra só dispara com backlog de verdade.
+- **Falso positivo em volume zero**: `foxcash_reconciliation_open_issues > 0` só
+  dispara com issue registrada (a reconciliação roda 1×/dia em 04:00 UTC) — o
+  `for: 10m` evita flapear no horário da run.
+- **Cardinalidade**: `foxcash_http_5xx_total{route}` exige rota normalizada (sem
+  UUID cru) — ver `grafana-cloud.md` §3.
+- Métricas com `_total` são **counters** — use `rate()`/`increase()` nas regras,
+  nunca o valor absoluto.

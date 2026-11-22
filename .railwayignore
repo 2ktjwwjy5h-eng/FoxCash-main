@@ -1,0 +1,5 @@
+# Arquivos que NÃO devem ser enviados ao Railway (upload via CLI).
+.git
+target/
+node_modules/
+e2e-tests/

@@ -1,0 +1,77 @@
+# Infra local (dev/E2E) + verificação multi-instância da Spec 61.
+#
+# Uso padrão (dev/E2E): `docker compose up postgres` — Postgres local.
+#
+# Verificação multi-instância (Spec 61): `docker compose up --build` sobe
+#   postgres + redis + api-a (host 8081) + api-b (host 8082) — 2 instâncias
+#   do app no MESMO Postgres/Redis, provando statelessness (sessões DB-backed,
+#   ShedLock no Postgres, rate limit agregado via Redis) e HA (failover).
+#   O app escuta em 8080 no container (yml base); Railway usa $PORT no profile
+#   railway. Perfil dev fornece os secrets dev-only (fail-fast no yml base).
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nyxcash-postgres
+    environment:
+      POSTGRES_DB: nyxcash
+      POSTGRES_USER: nyxcash
+      POSTGRES_PASSWORD: nyxcash
+    ports:
+      - "5432:5432"
+    volumes:
+      - nyxcash-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nyxcash -d nyxcash"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: nyxcash-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api-a:
+    build: .
+    container_name: nyxcash-api-a
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      DB_URL: jdbc:postgresql://postgres:5432/nyxcash
+      DB_USERNAME: nyxcash
+      DB_PASSWORD: nyxcash
+      FOXCASH_RATE_LIMIT_STORE: redis
+      SPRING_DATA_REDIS_HOST: redis
+    ports:
+      - "8081:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  api-b:
+    build: .
+    container_name: nyxcash-api-b
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      DB_URL: jdbc:postgresql://postgres:5432/nyxcash
+      DB_USERNAME: nyxcash
+      DB_PASSWORD: nyxcash
+      FOXCASH_RATE_LIMIT_STORE: redis
+      SPRING_DATA_REDIS_HOST: redis
+    ports:
+      - "8082:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  nyxcash-pgdata:

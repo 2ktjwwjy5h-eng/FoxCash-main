@@ -1,0 +1,21 @@
+# FoxCash — unit do systemd (deploy sem Docker, Spec 9)
+# Copiar para: /etc/systemd/system/foxcash.service
+# Arquivo de ambiente: /etc/foxcash/foxcash.env (chmod 600)
+[Unit]
+Description=FoxCash backend (Spring Boot, profile prod)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=foxcash
+Group=foxcash
+WorkingDirectory=/opt/foxcash
+ExecStart=/usr/bin/java -jar /opt/foxcash/foxcash.jar --spring.profiles.active=prod
+EnvironmentFile=/etc/foxcash/foxcash.env
+Restart=on-failure
+RestartSec=10
+SuccessExitStatus=143
+
+[Install]
+WantedBy=multi-user.target

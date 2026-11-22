@@ -1,0 +1,33 @@
+{
+  "fase": "62 F9 — scale-out estágio 16 réplicas",
+  "data": "2026-08-09 ~21:25 -03:00 (deploy loadgen e226ee57, rede privada foxcash.railway.internal:8080)",
+  "configuracao": {
+    "app_replicas": 16,
+    "loadgen_replicas": 16,
+    "stage_por_gerador": 325,
+    "pool_por_gerador": 33,
+    "max_vus_por_gerador": 650,
+    "duracao": "45s",
+    "chegada_total_alvo": "16 x 325 = 5200/s",
+    "rate_limit_app": "elevado (10M) — não mascara o teto real",
+    "webhook": "PAID assinado (HMAC-SHA256) com verify-signature=true",
+    "pool_hikari_app": "100 x 16 = 1600 desejadas (Postgres max 500 — SATURADO)"
+  },
+  "resultado": {
+    "geradores_que_completaram": "2 de 16 (14 CRASHED no setup — cadastro do pool falhou com Postgres 500/500)",
+    "sale_ok_agregado": "97.26% (9027/9281)",
+    "sale_5xx": "0.00% (verificado nos geradores que rodaram)",
+    "p95_charge_ms": "~10.9s (degradação severa)",
+    "iterations_s": "~140-158/s por gerador (vs 325/s alvo)"
+  },
+  "conclusao": "16 réplicas NÃO escalam: o Postgres max_connections=500 foi totalmente esgotado (16 x pool 100 = 1600 desejadas). O setup do pool de lojistas do loadgen falhou (14/16 geradores CRASHED — 'too many clients already' no cadastro), a latência degradou (p95 charge ~10-19s) e o sale_ok caiu para ~94-97%. PONTO DE RUPTURA DO SCALE-OUT MEDIDO: o limite de conexões do Postgres é o gargalo central — o scale-out útil para com ~4-8 réplicas (~1.250-1.550/s) e DEGRADA além disso.",
+  "gate_pos_carga": {
+    "dups_idempotency": 0,
+    "reconciliation_issues_open": 0,
+    "wallet_vs_ledger": 0,
+    "deadlocks": 0,
+    "outbox": "0 FAILED / 767.268 PENDING (drenando) / 677.168 SENT",
+    "nota": "gate rodado com app restaurado para 2 réplicas (Postgres 500/500 impedia conexão)"
+  },
+  "restauracao": "app 2 réplicas + loadgen DELETADO (serviceDelete) + HTTPS e rate limit a restaurar (passo 5 do runbook)"
+}
