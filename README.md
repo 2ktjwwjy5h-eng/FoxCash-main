@@ -6,8 +6,8 @@ Backend em **Java 21 + Spring Boot 3.5** com **arquitetura hexagonal (ports & ad
 
 ## 1. Dados dos Integrantes da Equipe
 
-> **Instituição / Curso:** `[Nome da Faculdade / Universidade]` — `[Nome do Curso]`
-> **Disciplina / Professor(a):** `[Nome da Disciplina]` — Prof.(a) `[Nome do Professor]`
+> **Instituição / Curso:** `Centro Universitário Serra dos Órgãos` — `Ciência da Computação`
+> **Disciplina / Professor(a):** `Projeto de Desenvolvimento Web Back-End` — Prof.(a) `Antônio de Paula Pedrosa`
 
 | Nome Completo | Matrícula / RA | Papel no Projeto | GitHub / Contato |
 | :--- | :--- | :--- | :--- |
