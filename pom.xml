@@ -135,7 +135,7 @@
         <dependency>
             <groupId>net.logstash.logback</groupId>
             <artifactId>logstash-logback-encoder</artifactId>
-            <version>8.0</version>
+            <version>9.0</version>
         </dependency>
         <!-- SEC-21 (revisão de segurança 2026-08-11): Apache HttpClient 5 com
              DnsResolver PINADO na entrega de webhooks de saída — o java.net.http
