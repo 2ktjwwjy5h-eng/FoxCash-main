@@ -10,7 +10,7 @@ jobs:
     name: Build + testes unitários
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Java 21 (Temurin)
         uses: actions/setup-java@v4
@@ -46,7 +46,7 @@ jobs:
     name: Docs consistency (Spec 138 — roadmap/frontmatter/código)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Spec 138 (C5): a documentação é verificada MECANICAMENTE — falha o build
       # se: (A) status da tabela do roadmap ≠ frontmatter da spec; (B) spec
@@ -60,7 +60,7 @@ jobs:
     name: "Testes de integração (Spec 137 — Testcontainers: Postgres + Redis reais)"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Java 21 (Temurin)
         uses: actions/setup-java@v4
@@ -85,7 +85,7 @@ jobs:
     name: E2E Playwright (PostgreSQL nativo — sem Docker)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Java 21 (Temurin)
         uses: actions/setup-java@v4
@@ -209,7 +209,7 @@ jobs:
     name: Flyway — integridade das migrations (checksum + pendentes)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Java 21 (Temurin)
         uses: actions/setup-java@v4
@@ -274,7 +274,7 @@ jobs:
     name: Flyway — banco vazio → migrate → boot + Hibernate validate + smoke
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Java 21 (Temurin)
         uses: actions/setup-java@v4
@@ -325,7 +325,7 @@ jobs:
     name: Flyway — upgrade incremental (V41 → V42) + boot + smoke
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Java 21 (Temurin)
         uses: actions/setup-java@v4
@@ -393,7 +393,7 @@ jobs:
     name: Carga + concorrência (k6)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Java 21 (Temurin)
         uses: actions/setup-java@v4
